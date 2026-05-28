@@ -3,7 +3,7 @@
 //  CC 106 · St. Peter's College · Generalao & Sapra
 // ============================================================
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL      = "https://xydocnvlnktvhzeopdib.supabase.co";
@@ -506,6 +506,45 @@ function resolveAssignedCaregivers(patient,caregivers){
   if(Array.isArray(patient.assigned_caregivers)&&patient.assigned_caregivers.length)
     return caregivers.filter(c=>patient.assigned_caregivers.includes(c.id));
   return caregivers;
+}
+
+function getRoleScopedData(profile,patients,appointments,healthUpdates,billings){
+  if(!profile) return {
+    scopedPatients: patients,
+    scopedAppointments: appointments,
+    scopedHealthUpdates: healthUpdates,
+    scopedBillings: billings,
+  };
+
+  const isPatientLike=profile.role==="patient"||profile.role==="family";
+  const linkedPatient=resolveLinkedPatient(profile,patients);
+  const linkedPatientIds=linkedPatient?[linkedPatient.id]:[];
+  const caregiverPatientIds=new Set((patients||[]).filter(p=>p.assigned_caregiver===profile.id).map(p=>p.id));
+
+  if(profile.role==="caregiver"){
+    return {
+      scopedPatients: (patients||[]).filter(p=>p.assigned_caregiver===profile.id),
+      scopedAppointments: (appointments||[]).filter(a=>a.caregiver_id===profile.id || caregiverPatientIds.has(a.patient_id)),
+      scopedHealthUpdates: (healthUpdates||[]).filter(u=>u.caregiver_id===profile.id || caregiverPatientIds.has(u.patient_id)),
+      scopedBillings: (billings||[]).filter(b=>caregiverPatientIds.has(b.patient_id)),
+    };
+  }
+
+  if(isPatientLike){
+    return {
+      scopedPatients: linkedPatient?[linkedPatient]:[],
+      scopedAppointments: (appointments||[]).filter(a=>linkedPatientIds.includes(a.patient_id)),
+      scopedHealthUpdates: (healthUpdates||[]).filter(u=>linkedPatientIds.includes(u.patient_id)),
+      scopedBillings: (billings||[]).filter(b=>linkedPatientIds.includes(b.patient_id)),
+    };
+  }
+
+  return {
+    scopedPatients: patients,
+    scopedAppointments: appointments,
+    scopedHealthUpdates: healthUpdates,
+    scopedBillings: billings,
+  };
 }
 
 // ── Small components ──────────────────────────────────────────
@@ -2029,7 +2068,12 @@ export default function App(){
 
   if(!profile) return(<><AuthScreen onLogin={setProfile}/><ToastManager/></>);
 
-  const shared={patients,setPatients,appointments,setAppointments,messages,setMessages,healthUpdates,setHealthUpdates,billings,setBillings,notifications,setNotifications,profile,caregivers,setCaregivers};
+  const {scopedPatients,scopedAppointments,scopedHealthUpdates,scopedBillings}=useMemo(()=>
+    getRoleScopedData(profile,patients,appointments,healthUpdates,billings),
+    [profile,patients,appointments,healthUpdates,billings]
+  );
+
+  const shared={patients:scopedPatients,setPatients,appointments:scopedAppointments,setAppointments,messages,setMessages,healthUpdates:scopedHealthUpdates,setHealthUpdates,billings:scopedBillings,setBillings,notifications,setNotifications,profile,caregivers,setCaregivers};
   const screens={
     dashboard:<Dashboard {...shared} onNav={nav}/>,
     patients:isPatientLike ? <AppointmentsModule {...shared}/> : <PatientsModule {...shared}/>,
