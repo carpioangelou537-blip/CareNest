@@ -740,6 +740,27 @@ async function sbGetProfiles() {
   return await sbQ("profiles", q => q.select("*").order("created_at", { ascending: false }));
 }
 
+function normalizePhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function resolveLinkedPatient(profile, patients) {
+  if (!profile || !Array.isArray(patients)) return null;
+  const profilePhone = normalizePhone(profile?.phone);
+  return patients.find(p => p.created_by === profile.id)
+    || (profilePhone ? patients.find(p => normalizePhone(p.family_contact) === profilePhone) : null)
+    || null;
+}
+
+function resolveAssignedCaregivers(patient, caregivers) {
+  if (!Array.isArray(caregivers)) return [];
+  if (!patient) return caregivers;
+  if (patient.assigned_caregiver) return caregivers.filter(c => c.id === patient.assigned_caregiver);
+  if (Array.isArray(patient.assigned_caregivers) && patient.assigned_caregivers.length) return caregivers.filter(c => patient.assigned_caregivers.includes(c.id));
+  if (patient.caregiver_id) return caregivers.filter(c => c.id === patient.caregiver_id);
+  return caregivers;
+}
+
 // Upload profile image to storage and return public URL
 async function sbUploadProfileImage(file, profileId) {
   if (!supabase || !file) return null;
@@ -1188,9 +1209,10 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
 
   const isPatientRole = profile?.role === "patient";
   const isFamilyRole = profile?.role === "family";
+  const linkedPatient = resolveLinkedPatient(profile, patients);
 
   const visiblePatients = (isPatientRole || isFamilyRole)
-    ? patients.filter(p => p.created_by === profile?.id || p.family_contact === profile?.phone)
+    ? (linkedPatient ? [linkedPatient] : [])
     : patients;
 
   useEffect(() => {
@@ -1198,16 +1220,11 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
       setBookForm({ caregiver_id: "", date: "", time: "", notes: "", duration_mins: 60 });
       return;
     }
-    const p = patients.find(x => x.id === showBook);
-    const assigned = (p && (() => {
-      if (p.assigned_caregiver) return caregivers.filter(c => c.id === p.assigned_caregiver);
-      if (Array.isArray(p.assigned_caregivers) && p.assigned_caregivers.length) return caregivers.filter(c => p.assigned_caregivers.includes(c.id));
-      if (p.caregiver_id) return caregivers.filter(c => c.id === p.caregiver_id);
-      return caregivers;
-    })()) || caregivers;
+    const p = patients.find(x => x.id === showBook) || linkedPatient;
+    const assigned = resolveAssignedCaregivers(p, caregivers);
     const first = assigned && assigned.length ? assigned[0].id : (caregivers[0]?.id || "");
     setBookForm(f => ({ ...f, caregiver_id: first }));
-  }, [showBook, caregivers, patients]);
+  }, [showBook, caregivers, linkedPatient, patients]);
 
   async function save() {
     if (!form.full_name || !form.diagnosis) { toast("Name and diagnosis are required", "error"); return; }
@@ -1391,9 +1408,11 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
           <button className="btn btn-ghost" onClick={() => { setShowBook(null); }}>Cancel</button>
           <button className="btn btn-primary" onClick={async () => {
             if (!bookForm.caregiver_id || !bookForm.date || !bookForm.time) { toast("Please select caregiver, date and time", "error"); return; }
+            const selectedPatient = patients.find(x => x.id === showBook) || linkedPatient;
+            if (!selectedPatient) { toast("No linked patient found to book against", "error"); return; }
             const appt = {
-              title: `Appointment - ${visiblePatients.find(x=>x.id===showBook)?.full_name || "Patient"}`,
-              patient_id: showBook,
+              title: `Appointment - ${selectedPatient.full_name}`,
+              patient_id: selectedPatient.id,
               caregiver_id: bookForm.caregiver_id || null,
               date: bookForm.date,
               time: bookForm.time,
@@ -1410,13 +1429,28 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
             } else toast("Failed to create appointment", "error");
           }}>Request Appointment</button>
         </>}>
+        {(() => {
+          const selectedPatient = patients.find(x => x.id === showBook) || linkedPatient;
+          const assignedCaregivers = resolveAssignedCaregivers(selectedPatient, caregivers);
+          return (
+            <>
+              <div className="form-row">
+                <FG label="Patient">
+                  <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #DBEAFE", background: "#F8FAFC", fontWeight: 600, fontSize: 13 }}>
+                    {selectedPatient?.full_name || "No linked patient"}
+                  </div>
+                </FG>
+                <FG label="Caregiver">
+                  <select value={bookForm.caregiver_id} onChange={e => setBookForm(f => ({ ...f, caregiver_id: e.target.value }))}>
+                    <option value="">Select caregiver…</option>
+                    {(assignedCaregivers.length ? assignedCaregivers : caregivers).map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                  </select>
+                </FG>
+              </div>
+            </>
+          );
+        })()}
         <div className="form-row">
-          <FG label="Caregiver">
-            <select value={bookForm.caregiver_id} onChange={e => setBookForm(f => ({ ...f, caregiver_id: e.target.value }))}>
-              <option value="">Select caregiver…</option>
-              {caregivers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-            </select>
-          </FG>
           <FG label="Date"><input type="date" value={bookForm.date} onChange={e => setBookForm(f => ({ ...f, date: e.target.value }))} /></FG>
           <FG label="Time"><input type="time" value={bookForm.time} onChange={e => setBookForm(f => ({ ...f, time: e.target.value }))} /></FG>
         </div>
@@ -1435,18 +1469,22 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
   const [form, setForm] = useState({ title: "", patient_id: "", caregiver_id: "", date: "", time: "", notes: "", status: "scheduled", duration_mins: 60 });
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const linkedPatient = resolveLinkedPatient(profile, patients);
   const filtered = appointments.filter(a => filter === "all" || a.status === filter);
 
   async function addAppt() {
-    const needCaregiver = profile?.role === "patient" || profile?.role === "family";
-    if (!form.title || !form.patient_id || !form.date || !form.time || (needCaregiver && !form.caregiver_id)) { toast("Fill all required fields", "error"); return; }
+    const isPatientLike = profile?.role === "patient" || profile?.role === "family";
+    const patientId = isPatientLike ? linkedPatient?.id : form.patient_id;
+    const needCaregiver = isPatientLike;
+    if (!form.title || !patientId || !form.date || !form.time || (needCaregiver && !form.caregiver_id)) { toast("Fill all required fields", "error"); return; }
+    if (isPatientLike && !linkedPatient) { toast("No linked patient found for this account", "error"); return; }
     setLoading(true);
-    const ok = await sbAddAppointment({ ...form, duration_mins: Number(form.duration_mins) || 60 });
+    const ok = await sbAddAppointment({ ...form, patient_id: patientId, duration_mins: Number(form.duration_mins) || 60 });
     if (ok) {
       setAppointments(await sbGetAppointments());
       toast("Appointment scheduled");
       setShowAdd(false);
-      setForm({ title: "", patient_id: "", date: "", time: "", notes: "", status: "scheduled", duration_mins: 60 });
+      setForm({ title: "", patient_id: "", caregiver_id: "", date: "", time: "", notes: "", status: "scheduled", duration_mins: 60 });
     }
     setLoading(false);
   }
@@ -1454,19 +1492,12 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
   // When opening the add modal, pre-select caregiver assigned to patient or first available
   useEffect(() => {
     if (!showAdd) return;
-    (async () => {
-      const pid = form.patient_id || (profile?.role === "patient" ? (patients.find(p => p.created_by === profile.id)?.id || patients[0]?.id) : null);
-      const p = patients.find(x => x.id === pid);
-      const assigned = (p && (() => {
-        if (p.assigned_caregiver) return caregivers.filter(c => c.id === p.assigned_caregiver);
-        if (Array.isArray(p.assigned_caregivers) && p.assigned_caregivers.length) return caregivers.filter(c => p.assigned_caregivers.includes(c.id));
-        if (p.caregiver_id) return caregivers.filter(c => c.id === p.caregiver_id);
-        return caregivers;
-      })()) || caregivers;
-      const first = assigned && assigned.length ? assigned[0].id : (caregivers[0]?.id || "");
-      setForm(f => ({ ...f, caregiver_id: first, patient_id: pid || f.patient_id }));
-    })();
-  }, [showAdd, caregivers]);
+    const patientId = (profile?.role === "patient" || profile?.role === "family") ? linkedPatient?.id : form.patient_id;
+    const p = patients.find(x => x.id === patientId) || linkedPatient;
+    const assigned = resolveAssignedCaregivers(p, caregivers);
+    const first = assigned && assigned.length ? assigned[0].id : (caregivers[0]?.id || "");
+    setForm(f => ({ ...f, caregiver_id: first, patient_id: patientId || f.patient_id }));
+  }, [showAdd, caregivers, form.patient_id, linkedPatient, patients, profile?.role]);
 
   async function changeStatus(id, status) {
     const ok = await sbUpdateAppointmentStatus(id, status);
@@ -1483,10 +1514,9 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
           <h2 className="page-title">Appointments</h2>
           <p className="page-subtitle">Schedule and manage caregiving sessions</p>
         </div>
-        <button className="btn btn-primary" onClick={async () => {
-          if (profile?.role === "patient") {
-            const myPatient = patients.find(p => p.created_by === profile.id) || patients[0]?.id;
-            setForm(f => ({ ...f, patient_id: myPatient?.id || myPatient }));
+        <button className="btn btn-primary" onClick={() => {
+          if (profile?.role === "patient" || profile?.role === "family") {
+            setForm(f => ({ ...f, patient_id: linkedPatient?.id || "", caregiver_id: "" }));
           }
           setShowAdd(true);
         }}>
@@ -1507,6 +1537,7 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(295px,1fr))", gap: 16 }}>
         {filtered.map((a, i) => {
           const pt = patients.find(p => p.id === a.patient_id);
+          const caregiver = caregivers.find(c => c.id === a.caregiver_id);
           const borderColor = statusColors[a.status] || C.jade;
           return (
             <div key={a.id} className="appt-card slide-left" style={{ animationDelay: `${i * 0.04}s`, borderTop: `3px solid ${borderColor}` }}>
@@ -1526,6 +1557,15 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
                   <div>
                     <div style={{ fontSize: 12.5, fontWeight: 600 }}>{pt.full_name}</div>
                     <div style={{ fontSize: 11, color: C.slateL }}>{pt.diagnosis}</div>
+                  </div>
+                </div>
+              )}
+              {caregiver && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px", background: "#EFF6FF", borderRadius: 9, border: "1px solid #DBEAFE" }}>
+                  <Avatar name={caregiver.full_name} size={26} />
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: C.violet }}>Caregiver: {caregiver.full_name}</div>
+                    <div style={{ fontSize: 11, color: C.slateL }}>{caregiver.role || "caregiver"}</div>
                   </div>
                 </div>
               )}
@@ -1561,7 +1601,9 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
           <FG label="Title"><input value={form.title} onChange={set("title")} placeholder="Visit / Therapy session" /></FG>
           <FG label="Patient">
             {profile?.role === "patient" || profile?.role === "family" ? (
-              <input value={form.patient_id} disabled />
+              <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid #DBEAFE", background: "#F8FAFC", fontWeight: 600, fontSize: 13 }}>
+                {linkedPatient?.full_name || "No linked patient found"}
+              </div>
             ) : (
               <select value={form.patient_id} onChange={set("patient_id")}>
                 <option value="">Select patient…</option>
@@ -1574,7 +1616,11 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
           <FG label="Caregiver">
             <select value={form.caregiver_id} onChange={set("caregiver_id")}>
               <option value="">Select caregiver…</option>
-              {caregivers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+              {(() => {
+                const selectedPatient = (profile?.role === "patient" || profile?.role === "family") ? linkedPatient : patients.find(p => p.id === form.patient_id);
+                const caregiverOptions = resolveAssignedCaregivers(selectedPatient, caregivers);
+                return (caregiverOptions.length ? caregiverOptions : caregivers).map(c => <option key={c.id} value={c.id}>{c.full_name}</option>);
+              })()}
             </select>
           </FG>
           <FG label="Date"><input type="date" value={form.date} onChange={set("date")} /></FG>
