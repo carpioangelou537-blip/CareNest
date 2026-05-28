@@ -2012,14 +2012,27 @@ export default function App(){
     toast("Signed out successfully");
   }
 
-  function nav(id){setActive(id);localStorage.setItem("careNestActive",id);}
+  const isPatientLike = profile?.role === "patient" || profile?.role === "family";
+
+  function nav(id){
+    const nextId = (isPatientLike && id === "patients") ? "appointments" : id;
+    setActive(nextId);
+    localStorage.setItem("careNestActive", nextId);
+  }
+
+  useEffect(()=>{
+    if (isPatientLike && active === "patients") {
+      setActive("appointments");
+      localStorage.setItem("careNestActive", "appointments");
+    }
+  }, [active, isPatientLike]);
 
   if(!profile) return(<><AuthScreen onLogin={setProfile}/><ToastManager/></>);
 
   const shared={patients,setPatients,appointments,setAppointments,messages,setMessages,healthUpdates,setHealthUpdates,billings,setBillings,notifications,setNotifications,profile,caregivers,setCaregivers};
   const screens={
     dashboard:<Dashboard {...shared} onNav={nav}/>,
-    patients:<PatientsModule {...shared}/>,
+    patients:isPatientLike ? <AppointmentsModule {...shared}/> : <PatientsModule {...shared}/>,
     appointments:<AppointmentsModule {...shared}/>,
     health:<HealthModule {...shared}/>,
     messages:<MessagingModule {...shared}/>,
@@ -2114,7 +2127,7 @@ export default function App(){
       {/* Mobile Bottom Navigation */}
       <nav className="mobile-nav">
         <div className="mobile-nav-inner">
-          {MOB_NAV.map(n=>(
+          {MOB_NAV.filter(n => !(isPatientLike && n.id === "patients")).map(n=>(
             <button key={n.id} className={`mob-nav-item ${active===n.id?"active":""}`} onClick={()=>nav(n.id)}>
               <Icon name={n.icon} size={20} color={active===n.id?C.jade:"rgba(148,163,184,.7)"}/>
               <span>{n.label}</span>
