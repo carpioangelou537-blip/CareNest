@@ -626,8 +626,7 @@ async function sbQ(table, queryFn) {
   if (!supabase) return [];
   const { data, error } = await queryFn(supabase.from(table));
   if (error) {
-    console.error(`[${table}]`, error.message, error.details || error.hint || error.code);
-    toast(`Unable to load ${table}. ${error.message}`, "error");
+    console.error(`[${table}]`, error.message);
     return [];
   }
   return data || [];
@@ -637,11 +636,7 @@ async function sbQ(table, queryFn) {
 async function sbGetProfile(uid) {
   if (!supabase) return MOCK.profile;
   const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
-  if (error) {
-    console.error("profiles", error.message, error.details || error.hint || error.code);
-    toast(`Unable to load profile. ${error.message}`, "error");
-    return null;
-  }
+  if (error) return null;
   return data;
 }
 async function sbUpdateProfile(uid, fields) {
@@ -673,16 +668,11 @@ async function sbDeletePatient(id) {
 
 // Appointments
 async function sbGetAppointments() {
-  return (await sbQ("appointments", q => q.select("*,patient:patients(*),caregiver:profiles(*)").order("date").order("time"))) ?? MOCK.appointments;
+  return (await sbQ("appointments", q => q.select("*").order("date").order("time"))) ?? MOCK.appointments;
 }
 async function sbAddAppointment(a) {
   if (!supabase) { MOCK.appointments.push({ ...a, id: "a" + Date.now(), created_at: new Date().toISOString() }); return true; }
-  const payload = {
-    ...a,
-    caregiver_id: a.caregiver_id || null,
-    patient_id: a.patient_id || null,
-  };
-  const { error } = await supabase.from("appointments").insert([payload]);
+  const { error } = await supabase.from("appointments").insert([a]);
   if (error) { toast(error.message, "error"); return false; }
   return true;
 }
@@ -694,7 +684,6 @@ async function sbUpdateAppointmentStatus(id, status) {
 
 // Messages
 async function sbGetMessages(uid) {
-  if (!uid) return MOCK.messages;
   return (await sbQ("messages", q => q.select("*").or(`sender_id.eq.${uid},receiver_id.eq.${uid},receiver_id.is.null`).order("created_at"))) ?? MOCK.messages;
 }
 async function sbSendMessage(msg) {
@@ -739,7 +728,6 @@ async function sbUpdateBillingStatus(id, status, method) {
 // Notifications
 async function sbGetNotifications(uid) {
   if (!supabase) return MOCK.notifications;
-  if (!uid) return [];
   return (await sbQ("notifications", q => q.select("*").eq("user_id", uid).order("created_at", { ascending: false }))) ?? [];
 }
 async function sbMarkNotifRead(id) {
@@ -750,6 +738,27 @@ async function sbMarkNotifRead(id) {
 // Profiles list
 async function sbGetProfiles() {
   return await sbQ("profiles", q => q.select("*").order("created_at", { ascending: false }));
+}
+
+function normalizePhone(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function resolveLinkedPatient(profile, patients) {
+  if (!profile || !Array.isArray(patients)) return null;
+  const profilePhone = normalizePhone(profile?.phone);
+  return patients.find(p => p.created_by === profile.id)
+    || (profilePhone ? patients.find(p => normalizePhone(p.family_contact) === profilePhone) : null)
+    || null;
+}
+
+function resolveAssignedCaregivers(patient, caregivers) {
+  if (!Array.isArray(caregivers)) return [];
+  if (!patient) return caregivers;
+  if (patient.assigned_caregiver) return caregivers.filter(c => c.id === patient.assigned_caregiver);
+  if (Array.isArray(patient.assigned_caregivers) && patient.assigned_caregivers.length) return caregivers.filter(c => patient.assigned_caregivers.includes(c.id));
+  if (patient.caregiver_id) return caregivers.filter(c => c.id === patient.caregiver_id);
+  return caregivers;
 }
 
 // Upload profile image to storage and return public URL
@@ -877,12 +886,8 @@ function AuthScreen({ onLogin }) {
         }
         if (user && user.id) {
           await supabase.from("profiles").upsert({ id: user.id, full_name: form.full_name, role: form.role });
-          let profile = await sbGetProfile(user.id);
-          if (!profile) {
-            await supabase.from("profiles").insert([{ id: user.id, full_name: form.full_name, role: form.role }]);
-            profile = await sbGetProfile(user.id);
-          }
-          onLogin({ ...(profile || {}), email: user.email });
+          const profile = await sbGetProfile(user.id);
+          onLogin({ ...profile, email: user.email });
           toast(`Welcome, ${profile?.full_name?.split(" ")[0] || "there"}!`);
         } else {
           toast("Account created. Please sign in.");
@@ -890,14 +895,8 @@ function AuthScreen({ onLogin }) {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
         if (error) throw error;
-        let profile = await sbGetProfile(data.user.id);
-        if (!profile) {
-          const defaultName = form.full_name || data.user.user_metadata?.full_name || data.user.email?.split("@")[0] || "Admin";
-          const role = form.role || "admin";
-          const { error: insertErr } = await supabase.from("profiles").insert([{ id: data.user.id, full_name: defaultName, role }]);
-          if (!insertErr) profile = await sbGetProfile(data.user.id);
-        }
-        onLogin({ id: data.user.id, ...(profile || {}), email: data.user.email });
+        const profile = await sbGetProfile(data.user.id);
+        onLogin({ ...profile, email: data.user.email });
         toast(`Welcome back, ${profile?.full_name?.split(" ")[0] || "there"}!`);
       }
     } catch (e) {
@@ -2381,7 +2380,7 @@ export default function App() {
         const session = data?.session;
         if (session?.user && mounted) {
           const prof = await sbGetProfile(session.user.id);
-          setProfile({ id: session.user.id, ...(prof || {}), email: session.user.email });
+          setProfile({ ...prof, email: session.user.email });
         }
       } catch (e) {
         console.error("auth restore", e.message || e);
@@ -2392,7 +2391,7 @@ export default function App() {
       try {
         if (event === "SIGNED_IN" && sess?.user) {
           const prof = await sbGetProfile(sess.user.id);
-          setProfile({ id: sess.user.id, ...(prof || {}), email: sess.user.email });
+          setProfile({ ...prof, email: sess.user.email });
         } else if (event === "SIGNED_OUT") {
           setProfile(null);
         }
