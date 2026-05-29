@@ -1,6 +1,6 @@
 // ============================================================
-//  CareNest – Fully DB-Connected & Mobile-Enhanced
-//  Supabase Auth + All Tables + Real-time + Mobile-First Design
+//  CareNest – Optimized: Fast Load + Smart Realtime
+//  Fixes: parallel fetching, incremental realtime, no re-fetch storms
 //  CC 106 · St. Peter's College · Generalao & Sapra
 // ============================================================
 
@@ -12,16 +12,22 @@ const SUPABASE_URL      = "https://xydocnvlnktvhzeopdib.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_PwF7vicN6W71jJ4djPXu1w_avxaInKJ";
 
 const globalScope = typeof globalThis !== "undefined" ? globalThis : window;
-const supabase = globalScope.__supabase || createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-if (import.meta.env.DEV) globalScope.__supabase = supabase;
+if (!globalScope.__supabase) {
+  globalScope.__supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true },
+    realtime: { timeout: 30000 },
+    global: { headers: { "x-client-info": "carenest/1.0" } },
+  });
+}
+const supabase = globalScope.__supabase;
 
 // ── Design Tokens ────────────────────────────────────────────
 const C = {
-  jade:    "#0D9488", jadeD: "#0F766E", jadeL: "#CCFBF1", jadeXL: "#F0FDF9",
-  pine:    "#134E4A", onyx: "#0C1117",  onyxM: "#1A2535", slate: "#0F172A",
-  slateM:  "#334155", slateL: "#64748B", slateXL: "#94A3B8",
-  cream:   "#FAFAF8", white: "#FFFFFF",
-  rose:    "#F43F5E", amber: "#F59E0B", violet: "#7C3AED", sky: "#0EA5E9",
+  jade:"#0D9488", jadeD:"#0F766E", jadeL:"#CCFBF1", jadeXL:"#F0FDF9",
+  pine:"#134E4A", onyx:"#0C1117", onyxM:"#1A2535", slate:"#0F172A",
+  slateM:"#334155", slateL:"#64748B", slateXL:"#94A3B8",
+  cream:"#FAFAF8", white:"#FFFFFF",
+  rose:"#F43F5E", amber:"#F59E0B", violet:"#7C3AED", sky:"#0EA5E9",
 };
 
 // ── SVG Icons ────────────────────────────────────────────────
@@ -77,10 +83,8 @@ const Icon = ({ name, size = 18, color = "currentColor", strokeWidth = 1.75 }) =
 // ── Global CSS ───────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
     --jade:#0D9488;--jadeD:#0F766E;--jadeL:#CCFBF1;--jadeXL:#F0FDF9;
     --pine:#134E4A;--onyx:#0C1117;--onyxM:#1A2535;--slate:#0F172A;
     --slateM:#334155;--slateL:#64748B;--slateXL:#94A3B8;
@@ -88,24 +92,11 @@ const CSS = `
     --violet:#7C3AED;--sky:#0EA5E9;
     --radius:16px;--shadow:0 4px 24px rgba(13,148,136,0.08);
     --shadowMd:0 8px 40px rgba(13,148,136,0.14);
-    --sidebar-width:252px;
-    --bottom-nav-h:64px;
+    --sidebar-width:252px;--bottom-nav-h:64px;
   }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    font-family:'DM Sans',sans-serif;
-    background:var(--cream);color:var(--slate);
-    min-height:100vh;-webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-    overscroll-behavior:none;
-  }
-
-  ::-webkit-scrollbar{width:4px;height:4px}
-  ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:var(--jadeL);border-radius:99px}
-
+  html{scroll-behavior:smooth}
+  body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--slate);min-height:100vh;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+  ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--jadeL);border-radius:99px}
   @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
   @keyframes slideLeft{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:translateX(0)}}
@@ -113,299 +104,94 @@ const CSS = `
   @keyframes slideUp{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-
   .fade-up{animation:fadeUp .42s cubic-bezier(.22,1,.36,1) both}
   .scale-in{animation:scaleIn .32s cubic-bezier(.22,1,.36,1) both}
   .slide-left{animation:slideLeft .30s ease both}
   .slide-up{animation:slideUp .36s cubic-bezier(.22,1,.36,1) both}
-
-  /* ─ Buttons */
-  .btn{
-    display:inline-flex;align-items:center;gap:7px;
-    padding:10px 20px;border-radius:12px;border:none;
-    font-family:'DM Sans',sans-serif;font-size:13.5px;font-weight:500;
-    cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);white-space:nowrap;
-    position:relative;overflow:hidden;letter-spacing:.01em;
-  }
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:10px 20px;border-radius:12px;border:none;font-family:'DM Sans',sans-serif;font-size:13.5px;font-weight:500;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);white-space:nowrap;position:relative;overflow:hidden;letter-spacing:.01em}
   .btn::after{content:'';position:absolute;inset:0;background:white;opacity:0;transition:opacity .15s}
   .btn:hover::after{opacity:.08}
-  .btn-primary{
-    background:linear-gradient(135deg,var(--jade),var(--jadeD));
-    color:#fff;box-shadow:0 4px 16px rgba(13,148,136,.35);
-  }
+  .btn-primary{background:linear-gradient(135deg,var(--jade),var(--jadeD));color:#fff;box-shadow:0 4px 16px rgba(13,148,136,.35)}
   .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(13,148,136,.45)}
   .btn-primary:active{transform:translateY(0)}
-  .btn-ghost{
-    background:transparent;color:var(--slateM);
-    border:1.5px solid rgba(203,213,225,.9);
-  }
+  .btn-ghost{background:transparent;color:var(--slateM);border:1.5px solid rgba(203,213,225,.9)}
   .btn-ghost:hover{border-color:var(--jade);color:var(--jade);background:var(--jadeXL)}
   .btn-danger{background:#FFF1F2;color:var(--rose);border:1.5px solid #FFE4E6}
   .btn-danger:hover{background:var(--rose);color:#fff;border-color:var(--rose)}
   .btn:disabled{opacity:.55;cursor:not-allowed;transform:none !important;box-shadow:none !important}
-
-  /* ─ Cards */
-  .card{
-    background:#fff;border-radius:var(--radius);
-    border:1px solid rgba(209,229,226,.7);
-    box-shadow:var(--shadow);padding:20px;
-    transition:box-shadow .25s,transform .25s;
-  }
+  .card{background:#fff;border-radius:var(--radius);border:1px solid rgba(209,229,226,.7);box-shadow:var(--shadow);padding:20px;transition:box-shadow .25s,transform .25s}
   .card:hover{box-shadow:var(--shadowMd)}
-
-  /* ─ Badges */
-  .badge{
-    display:inline-flex;align-items:center;gap:4px;
-    padding:3px 10px;border-radius:99px;font-size:11px;
-    font-weight:600;letter-spacing:.3px;text-transform:capitalize;
-  }
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;letter-spacing:.3px;text-transform:capitalize}
   .badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.6;flex-shrink:0}
-  .badge-green{background:#D1FAE5;color:#059669}
-  .badge-amber{background:#FEF3C7;color:#D97706}
-  .badge-red{background:#FFE4E6;color:var(--rose)}
-  .badge-teal{background:var(--jadeL);color:var(--jadeD)}
-  .badge-purple{background:#EDE9FE;color:var(--violet)}
-  .badge-blue{background:#E0F2FE;color:var(--sky)}
-
-  /* ─ Form inputs */
-  input,textarea,select{
-    width:100%;padding:11px 14px;
-    border:1.5px solid #E2E8F0;border-radius:10px;
-    font-family:'DM Sans',sans-serif;font-size:14px;
-    background:#FAFBFC;color:var(--slate);
-    transition:all .2s;outline:none;
-    -webkit-appearance:none;
-  }
-  input:focus,textarea:focus,select:focus{
-    border-color:var(--jade);box-shadow:0 0 0 4px rgba(13,148,136,.12);background:#fff;
-  }
+  .badge-green{background:#D1FAE5;color:#059669}.badge-amber{background:#FEF3C7;color:#D97706}.badge-red{background:#FFE4E6;color:var(--rose)}.badge-teal{background:var(--jadeL);color:var(--jadeD)}.badge-purple{background:#EDE9FE;color:var(--violet)}.badge-blue{background:#E0F2FE;color:var(--sky)}
+  input,textarea,select{width:100%;padding:11px 14px;border:1.5px solid #E2E8F0;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;background:#FAFBFC;color:var(--slate);transition:all .2s;outline:none;-webkit-appearance:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--jade);box-shadow:0 0 0 4px rgba(13,148,136,.12);background:#fff}
   input::placeholder,textarea::placeholder{color:var(--slateXL)}
-  label{
-    display:block;font-size:12px;font-weight:600;
-    color:var(--slateL);margin-bottom:6px;letter-spacing:.3px;
-    text-transform:uppercase;
-  }
+  label{display:block;font-size:12px;font-weight:600;color:var(--slateL);margin-bottom:6px;letter-spacing:.3px;text-transform:uppercase}
   .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media(max-width:600px){.form-row{grid-template-columns:1fr}}
-
-  /* ─ Spinner */
-  .spinner{
-    width:18px;height:18px;
-    border:2.5px solid rgba(13,148,136,.2);
-    border-top-color:var(--jade);
-    border-radius:50%;animation:spin .65s linear infinite;
-  }
-
-  /* ─ Sidebar (desktop) */
-  .sidebar{
-    width:var(--sidebar-width);min-height:100vh;
-    background:var(--onyx);
-    display:flex;flex-direction:column;
-    position:fixed;top:0;left:0;z-index:100;
-    border-right:1px solid rgba(255,255,255,.05);
-    transition:transform .3s cubic-bezier(.22,1,.36,1);
-  }
-  .sidebar::before{
-    content:'';position:absolute;top:0;left:0;right:0;height:260px;
-    background:radial-gradient(ellipse at 40% -10%,rgba(13,148,136,.22) 0%,transparent 70%);
-    pointer-events:none;
-  }
-  .sidebar-logo{
-    padding:24px 20px 20px;
-    border-bottom:1px solid rgba(255,255,255,.06);
-    position:relative;z-index:1;
-  }
+  .spinner{width:18px;height:18px;border:2.5px solid rgba(13,148,136,.2);border-top-color:var(--jade);border-radius:50%;animation:spin .65s linear infinite}
+  .sidebar{width:var(--sidebar-width);min-height:100vh;background:var(--onyx);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;border-right:1px solid rgba(255,255,255,.05);transition:transform .3s cubic-bezier(.22,1,.36,1)}
+  .sidebar::before{content:'';position:absolute;top:0;left:0;right:0;height:260px;background:radial-gradient(ellipse at 40% -10%,rgba(13,148,136,.22) 0%,transparent 70%);pointer-events:none}
+  .sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.06);position:relative;z-index:1}
   .sidebar-logo-mark{display:inline-flex;align-items:center;gap:9px;margin-bottom:4px}
-  .sidebar-logo-icon{
-    width:36px;height:36px;border-radius:10px;
-    background:linear-gradient(135deg,var(--jade),var(--jadeD));
-    display:flex;align-items:center;justify-content:center;
-    box-shadow:0 4px 14px rgba(13,148,136,.5);flex-shrink:0;
-  }
+  .sidebar-logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--jade),var(--jadeD));display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(13,148,136,.5);flex-shrink:0}
   .sidebar-logo h1{font-family:'DM Serif Display',serif;font-size:20px;color:#fff;line-height:1;letter-spacing:-.3px}
   .sidebar-logo p{font-size:10px;color:rgba(148,163,184,.6);letter-spacing:1px;text-transform:uppercase;font-weight:500}
-  .nav-section-label{
-    font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
-    color:rgba(255,255,255,.18);padding:18px 20px 6px;
-  }
-  .nav-item{
-    display:flex;align-items:center;gap:11px;
-    padding:10px 12px;margin:2px 10px;
-    border-radius:11px;cursor:pointer;
-    font-size:13px;font-weight:500;color:rgba(148,163,184,.8);
-    transition:all .2s;position:relative;overflow:hidden;
-  }
+  .nav-section-label{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.18);padding:18px 20px 6px}
+  .nav-item{display:flex;align-items:center;gap:11px;padding:10px 12px;margin:2px 10px;border-radius:11px;cursor:pointer;font-size:13px;font-weight:500;color:rgba(148,163,184,.8);transition:all .2s;position:relative;overflow:hidden}
   .nav-item:hover{background:rgba(255,255,255,.07);color:#fff}
-  .nav-item.active{
-    background:linear-gradient(135deg,rgba(13,148,136,.3),rgba(15,118,110,.2));
-    color:#fff;border:1px solid rgba(13,148,136,.35);
-  }
-  .nav-item.active::before{
-    content:'';position:absolute;left:0;top:20%;bottom:20%;
-    width:3px;border-radius:0 3px 3px 0;
-    background:var(--jade);box-shadow:0 0 8px var(--jade);
-  }
-
-  /* ─ Mobile header */
-  .mobile-header{
-    display:none;
-    position:fixed;top:0;left:0;right:0;z-index:90;
-    background:var(--onyx);
-    height:56px;
-    align-items:center;justify-content:space-between;
-    padding:0 16px;
-    border-bottom:1px solid rgba(255,255,255,.06);
-  }
-  .mobile-header-logo{display:flex;align-items:center;gap:9px}
-
-  /* ─ Mobile sidebar overlay */
-  .sidebar-overlay{
-    display:none;
-    position:fixed;inset:0;
-    background:rgba(0,0,0,.6);
-    z-index:99;
-    backdrop-filter:blur(4px);
-    animation:fadeIn .2s ease;
-  }
-
-  /* ─ Bottom nav (mobile) */
-  .bottom-nav{
-    display:none;
-    position:fixed;bottom:0;left:0;right:0;z-index:90;
-    background:var(--onyx);
-    border-top:1px solid rgba(255,255,255,.06);
-    height:var(--bottom-nav-h);
-    align-items:center;justify-content:space-around;
-    padding:0 4px;
-    padding-bottom:env(safe-area-inset-bottom);
-  }
-  .bottom-nav-item{
-    display:flex;flex-direction:column;align-items:center;gap:3px;
-    flex:1;padding:8px 4px;cursor:pointer;
-    color:rgba(148,163,184,.6);font-size:9.5px;font-weight:600;
-    letter-spacing:.3px;text-transform:uppercase;
-    transition:color .2s;border-radius:10px;
-    -webkit-tap-highlight-color:transparent;
-    position:relative;
-  }
+  .nav-item.active{background:linear-gradient(135deg,rgba(13,148,136,.3),rgba(15,118,110,.2));color:#fff;border:1px solid rgba(13,148,136,.35)}
+  .nav-item.active::before{content:'';position:absolute;left:0;top:20%;bottom:20%;width:3px;border-radius:0 3px 3px 0;background:var(--jade);box-shadow:0 0 8px var(--jade)}
+  .mobile-header{display:none;position:fixed;top:0;left:0;right:0;z-index:90;background:var(--onyx);height:56px;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99;backdrop-filter:blur(4px);animation:fadeIn .2s ease}
+  .bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:90;background:var(--onyx);border-top:1px solid rgba(255,255,255,.06);height:var(--bottom-nav-h);align-items:center;justify-content:space-around;padding:0 4px;padding-bottom:env(safe-area-inset-bottom)}
+  .bottom-nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;padding:8px 4px;cursor:pointer;color:rgba(148,163,184,.6);font-size:9.5px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;transition:color .2s;border-radius:10px;-webkit-tap-highlight-color:transparent;position:relative}
   .bottom-nav-item.active{color:var(--jade)}
-  .bottom-nav-item:active{background:rgba(255,255,255,.05)}
-
-  /* ─ Main layout */
   .main-area{margin-left:var(--sidebar-width);min-height:100vh}
   .page-wrap{padding:32px 36px}
-
-  /* ─ Page header */
-  .page-header{
-    display:flex;align-items:flex-start;justify-content:space-between;
-    margin-bottom:28px;gap:12px;flex-wrap:wrap;
-  }
+  .page-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;gap:12px;flex-wrap:wrap}
   .page-title{font-family:'DM Serif Display',serif;font-size:26px;color:var(--slate);line-height:1.1;letter-spacing:-.3px}
   .page-subtitle{font-size:13px;color:var(--slateL);margin-top:4px}
-
-  /* ─ Stats grid */
   .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
-  .stat-card{
-    background:#fff;border-radius:var(--radius);
-    border:1px solid rgba(209,229,226,.7);
-    padding:18px;position:relative;overflow:hidden;
-    transition:transform .25s,box-shadow .25s;box-shadow:var(--shadow);
-  }
+  .stat-card{background:#fff;border-radius:var(--radius);border:1px solid rgba(209,229,226,.7);padding:18px;position:relative;overflow:hidden;transition:transform .25s,box-shadow .25s;box-shadow:var(--shadow)}
   .stat-card:hover{transform:translateY(-3px);box-shadow:var(--shadowMd)}
   .stat-card-bg{position:absolute;right:-20px;bottom:-20px;width:90px;height:90px;border-radius:50%;opacity:.07}
   .stat-icon{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
   .stat-val{font-family:'DM Serif Display',serif;font-size:28px;line-height:1;letter-spacing:-.5px}
   .stat-label{font-size:12px;color:var(--slateL);margin-top:4px;font-weight:500}
   .stat-trend{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;margin-top:8px;padding:2px 7px;border-radius:99px}
-
-  /* ─ Content grid */
   .content-grid{display:grid;grid-template-columns:3fr 2fr;gap:18px}
-
-  /* ─ Table */
   .data-table{width:100%;border-collapse:collapse;font-size:13.5px}
-  .data-table thead th{
-    text-align:left;padding:11px 12px;
-    font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
-    color:var(--slateL);border-bottom:1.5px solid #F1F5F9;background:#FAFBFC;white-space:nowrap;
-  }
+  .data-table thead th{text-align:left;padding:11px 12px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--slateL);border-bottom:1.5px solid #F1F5F9;background:#FAFBFC;white-space:nowrap}
   .data-table tbody td{padding:12px 12px;border-bottom:1px solid #F8FAFC;vertical-align:middle}
   .data-table tbody tr:last-child td{border:none}
   .data-table tbody tr{transition:background .15s}
   .data-table tbody tr:hover td{background:#F8FEFC}
-
-  /* ─ Mobile card list (replaces table on mobile) */
   .mobile-list{display:none;flex-direction:column;gap:10px}
-  .mobile-card{
-    background:#fff;border-radius:14px;padding:14px;
-    border:1px solid rgba(209,229,226,.7);box-shadow:var(--shadow);
-    display:flex;flex-direction:column;gap:8px;
-    animation:fadeUp .3s ease both;
-  }
+  .mobile-card{background:#fff;border-radius:14px;padding:14px;border:1px solid rgba(209,229,226,.7);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px;animation:fadeUp .3s ease both}
   .mobile-card-header{display:flex;align-items:center;gap:10px}
   .mobile-card-actions{display:flex;gap:6px;margin-top:4px}
-
-  /* ─ Modal */
-  .modal-overlay{
-    position:fixed;inset:0;background:rgba(0,0,0,.55);
-    backdrop-filter:blur(8px);
-    z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;
-  }
-  .modal{
-    background:#fff;border-radius:20px;
-    width:100%;max-width:540px;max-height:92vh;
-    overflow-y:auto;padding:24px;
-    box-shadow:0 32px 80px rgba(0,0,0,.22);
-    animation:scaleIn .28s cubic-bezier(.22,1,.36,1);
-    border:1px solid rgba(209,229,226,.5);
-  }
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
+  .modal{background:#fff;border-radius:20px;width:100%;max-width:540px;max-height:92vh;overflow-y:auto;padding:24px;box-shadow:0 32px 80px rgba(0,0,0,.22);animation:scaleIn .28s cubic-bezier(.22,1,.36,1);border:1px solid rgba(209,229,226,.5)}
   .modal-title{font-family:'DM Serif Display',serif;font-size:19px;margin-bottom:20px;letter-spacing:-.2px}
   .modal-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid #F1F5F9}
-
-  /* ─ Mobile sheet modal */
-  @media(max-width:640px){
-    .modal{
-      position:fixed;bottom:0;left:0;right:0;
-      border-radius:20px 20px 0 0;
-      max-height:95vh;max-width:100%;
-      margin:0;
-      animation:slideUp .32s cubic-bezier(.22,1,.36,1);
-    }
-    .modal-overlay{align-items:flex-end;padding:0}
-  }
-
-  /* ─ Chat */
+  @media(max-width:640px){.modal{position:fixed;bottom:0;left:0;right:0;border-radius:20px 20px 0 0;max-height:95vh;max-width:100%;margin:0;animation:slideUp .32s cubic-bezier(.22,1,.36,1)}.modal-overlay{align-items:flex-end;padding:0}}
   .chat-messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background:#FAFBFC}
   .msg-bubble{max-width:72%;padding:10px 13px;border-radius:16px;font-size:13.5px;line-height:1.55;position:relative;word-break:break-word}
   .msg-out{background:linear-gradient(135deg,var(--jade),var(--jadeD));color:#fff;border-bottom-right-radius:4px;align-self:flex-end;box-shadow:0 4px 14px rgba(13,148,136,.25)}
   .msg-in{background:#fff;color:var(--slate);border-bottom-left-radius:4px;align-self:flex-start;box-shadow:0 2px 8px rgba(0,0,0,.06);border:1px solid #F1F5F9}
   .msg-time{font-size:9.5px;opacity:.55;margin-top:3px}
   .chat-input-row{display:flex;gap:8px;padding:12px 14px;border-top:1px solid #F1F5F9;background:#fff}
-
-  /* ─ Vital row */
   .vital-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F8FAFC}
   .vital-row:last-child{border:none}
   .vital-label{font-size:12.5px;color:var(--slateL);display:flex;align-items:center;gap:8px}
   .vital-val{font-size:15px;font-weight:700;color:var(--slate)}
-
-  /* ─ Avatar */
-  .avatar{
-    border-radius:50%;background:linear-gradient(135deg,var(--jadeL),#A7F3D0);
-    color:var(--jadeD);display:flex;align-items:center;justify-content:center;
-    font-weight:700;font-size:13px;flex-shrink:0;font-family:'DM Sans',sans-serif;
-    border:2px solid rgba(13,148,136,.15);
-  }
-
-  /* ─ Auth screen */
+  .avatar{border-radius:50%;background:linear-gradient(135deg,var(--jadeL),#A7F3D0);color:var(--jadeD);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;font-family:'DM Sans',sans-serif;border:2px solid rgba(13,148,136,.15)}
   .auth-screen{min-height:100vh;display:flex;background:var(--cream)}
-  .auth-left{
-    flex:1.1;background:var(--onyx);
-    display:flex;flex-direction:column;justify-content:center;
-    padding:64px 56px;position:relative;overflow:hidden;
-  }
+  .auth-left{flex:1.1;background:var(--onyx);display:flex;flex-direction:column;justify-content:center;padding:64px 56px;position:relative;overflow:hidden}
   .auth-left-orb1{position:absolute;top:-120px;right:-80px;width:480px;height:480px;border-radius:50%;background:radial-gradient(circle,rgba(13,148,136,.18) 0%,transparent 70%);pointer-events:none}
   .auth-left-orb2{position:absolute;bottom:-160px;left:-100px;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(20,184,166,.1) 0%,transparent 70%);pointer-events:none}
-  .auth-left-grid{position:absolute;inset:0;opacity:.04;background-image:linear-gradient(rgba(255,255,255,.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.5) 1px,transparent 1px);background-size:40px 40px}
   .auth-right{flex:1;display:flex;align-items:center;justify-content:center;padding:48px 40px}
   .auth-card{width:100%;max-width:420px}
   .auth-card-title{font-family:'DM Serif Display',serif;font-size:28px;margin-bottom:6px;letter-spacing:-.4px;color:var(--slate)}
@@ -414,96 +200,41 @@ const CSS = `
   .input-icon-wrap{position:relative}
   .input-icon-wrap input{padding-left:40px}
   .input-icon{position:absolute;top:50%;left:12px;transform:translateY(-50%);color:var(--slateXL);pointer-events:none}
-
-  /* ─ Feature pill */
-  .feature-pill{
-    display:flex;align-items:center;gap:10px;
-    padding:11px 14px;border-radius:12px;
-    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);
-    margin-bottom:10px;transition:background .2s;
-  }
+  .feature-pill{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);margin-bottom:10px;transition:background .2s}
   .feature-pill:hover{background:rgba(255,255,255,.08)}
-  .feature-pill-icon{
-    width:32px;height:32px;border-radius:8px;
-    background:rgba(13,148,136,.2);border:1px solid rgba(13,148,136,.3);
-    display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  }
-
-  /* ─ Toast */
+  .feature-pill-icon{width:32px;height:32px;border-radius:8px;background:rgba(13,148,136,.2);border:1px solid rgba(13,148,136,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .toast-wrap{position:fixed;bottom:80px;right:16px;z-index:999;display:flex;flex-direction:column;gap:8px}
-  .toast{
-    padding:12px 16px;border-radius:13px;font-size:13.5px;font-weight:500;
-    box-shadow:0 12px 32px rgba(0,0,0,.2);
-    animation:fadeUp .28s cubic-bezier(.22,1,.36,1);
-    display:flex;align-items:center;gap:9px;
-    border:1px solid rgba(255,255,255,.15);
-    backdrop-filter:blur(12px);
-  }
+  .toast{padding:12px 16px;border-radius:13px;font-size:13.5px;font-weight:500;box-shadow:0 12px 32px rgba(0,0,0,.2);animation:fadeUp .28s cubic-bezier(.22,1,.36,1);display:flex;align-items:center;gap:9px;border:1px solid rgba(255,255,255,.15);backdrop-filter:blur(12px)}
   .toast-success{background:var(--jade);color:#fff}
   .toast-error{background:var(--rose);color:#fff}
   .toast-info{background:var(--sky);color:#fff}
-
-  /* ─ Progress */
   .progress-track{background:#F1F5F9;border-radius:99px;height:5px}
   .progress-fill{border-radius:99px;height:5px;transition:width .7s cubic-bezier(.22,1,.36,1)}
-
-  /* ─ Appt card */
-  .appt-card{
-    border-radius:14px;padding:16px;background:#fff;
-    border:1px solid rgba(209,229,226,.7);box-shadow:var(--shadow);
-    transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden;
-  }
+  .appt-card{border-radius:14px;padding:16px;background:#fff;border:1px solid rgba(209,229,226,.7);box-shadow:var(--shadow);transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden}
   .appt-card:hover{transform:translateY(-3px);box-shadow:var(--shadowMd)}
-
-  /* ─ Section header */
   .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
   .section-title{font-family:'DM Serif Display',serif;font-size:16px;letter-spacing:-.2px}
-
-  /* ─ Empty state */
   .empty-state{text-align:center;padding:40px 24px;color:var(--slateL)}
   .empty-state-icon{width:52px;height:52px;border-radius:16px;background:var(--jadeXL);border:1px solid var(--jadeL);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
   .empty-state p{font-size:13.5px}
-
-  /* ─ Online dot */
   .online-dot{width:8px;height:8px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 2.5px rgba(34,197,94,.25);flex-shrink:0}
-
-  /* ─ Tag */
   .tag{display:inline-flex;align-items:center;background:#F1F5F9;color:var(--slateM);border-radius:6px;padding:2px 7px;font-size:10.5px;font-weight:600}
-
-  /* ─ Skeleton */
   .skeleton{background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%);background-size:400px 100%;animation:shimmer 1.4s infinite;border-radius:8px}
-
-  /* ─ Profile hero */
-  .profile-hero{
-    background:linear-gradient(135deg,var(--onyx),var(--pine));
-    border-radius:18px;padding:28px;color:#fff;position:relative;overflow:hidden;margin-bottom:18px;
-  }
+  .profile-hero{background:linear-gradient(135deg,var(--onyx),var(--pine));border-radius:18px;padding:28px;color:#fff;position:relative;overflow:hidden;margin-bottom:18px}
   .profile-hero::before{content:'';position:absolute;right:-60px;top:-60px;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle,rgba(13,148,136,.25) 0%,transparent 70%)}
-
-  /* ─ Report stat */
   .report-stat{background:#fff;border-radius:14px;padding:18px;border:1px solid rgba(209,229,226,.7);text-align:center;transition:transform .2s;box-shadow:var(--shadow)}
   .report-stat:hover{transform:translateY(-2px)}
   .report-stat-val{font-family:'DM Serif Display',serif;font-size:28px;line-height:1.1}
   .report-stat-label{font-size:11.5px;color:var(--slateL);margin-top:4px}
-
-  /* ─ Divider */
   .divider{height:1px;background:linear-gradient(90deg,transparent,#E2E8F0,transparent);margin:18px 0}
-
-  /* ─ Scroll hint on mobile tables */
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .table-scroll::after{content:'';position:absolute;right:0;top:0;bottom:0;width:24px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.9));pointer-events:none;border-radius:0 var(--radius) var(--radius) 0}
 
-  /* ════════════════════════════════════
-     RESPONSIVE BREAKPOINTS
-  ════════════════════════════════════ */
+  /* Skeleton loader */
+  .skel-row{display:flex;gap:12px;margin-bottom:14px;align-items:center}
+  .skel-circle{border-radius:50%;flex-shrink:0}
+  .skel-line{border-radius:6px}
 
-  /* Tablet */
-  @media(max-width:1100px){
-    .stats-grid{grid-template-columns:repeat(2,1fr)}
-    .content-grid{grid-template-columns:1fr}
-  }
-
-  /* Large mobile / small tablet */
+  @media(max-width:1100px){.stats-grid{grid-template-columns:repeat(2,1fr)}.content-grid{grid-template-columns:1fr}}
   @media(max-width:768px){
     :root{--sidebar-width:0px}
     .sidebar{transform:translateX(-252px);width:252px}
@@ -516,33 +247,13 @@ const CSS = `
     .page-header{margin-bottom:18px}
     .page-title{font-size:22px}
     .toast-wrap{bottom:calc(var(--bottom-nav-h) + 12px);right:12px;left:12px}
-    .toast{font-size:13px}
     .data-table-wrap{display:none}
     .mobile-list{display:flex}
     .auth-left{display:none}
     .auth-right{padding:24px 20px}
-    .auth-card-title{font-size:24px}
   }
-
-  @media(max-width:600px){
-    .stats-grid{grid-template-columns:1fr 1fr;gap:10px}
-    .stat-card{padding:14px}
-    .stat-val{font-size:22px}
-    .stat-trend{font-size:10px}
-    .card{padding:14px;border-radius:14px}
-    .appt-card{padding:14px}
-    .report-stat{padding:14px}
-    .report-stat-val{font-size:22px}
-  }
-
-  @media(max-width:390px){
-    .stats-grid{grid-template-columns:1fr 1fr;gap:8px}
-    .stat-icon{width:34px;height:34px}
-    .stat-val{font-size:20px}
-    .page-wrap{padding:12px}
-  }
-
-  /* Notch / dynamic island safe area */
+  @media(max-width:600px){.stats-grid{grid-template-columns:1fr 1fr;gap:10px}.stat-card{padding:14px}.stat-val{font-size:22px}.card{padding:14px;border-radius:14px}}
+  @media(max-width:390px){.stats-grid{grid-template-columns:1fr 1fr;gap:8px}.page-wrap{padding:12px}}
   @supports(padding-top:env(safe-area-inset-top)){
     .mobile-header{padding-top:env(safe-area-inset-top);height:calc(56px + env(safe-area-inset-top))}
     .main-area{padding-top:calc(56px + env(safe-area-inset-top))}
@@ -555,186 +266,189 @@ const CSS = `
 let _toastFn = null;
 function toast(msg, type = "success") { _toastFn?.(msg, type); }
 
-// ── Supabase helpers ─────────────────────────────────────────
+// ── OPTIMIZED Supabase helpers ───────────────────────────────
+// Generic safe query — returns [] on error, never throws
 async function sbQ(table, queryFn) {
-  const { data, error } = await queryFn(supabase.from(table));
-  if (error) {
-    console.error(`[${table}]`, error.message, error.details || error.hint || error.code);
-    toast(`Unable to load ${table}: ${error.message}`, "error");
+  try {
+    const { data, error } = await queryFn(supabase.from(table));
+    if (error) {
+      console.error(`[${table}]`, error.message);
+      toast(`${table}: ${error.message}`, "error");
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    console.error(`[${table}] fetch failed:`, e.message);
     return [];
   }
-  return data || [];
 }
 
+// ── Slim selects (only fetch columns the UI actually uses) ──
+async function sbGetPatients() {
+  return sbQ("patients", q =>
+    q.select("id,full_name,age,gender,diagnosis,medical_history,allergies,current_medications,status,assigned_caregiver,family_contact,emergency_contact,address,blood_type,created_by,created_at")
+     .order("created_at", { ascending: false })
+     .limit(200)
+  );
+}
+async function sbGetAppointments() {
+  return sbQ("appointments", q =>
+    q.select("id,title,patient_id,caregiver_id,date,time,duration_mins,notes,status,created_at")
+     .order("date", { ascending: false })
+     .limit(200)
+  );
+}
+async function sbGetMessages(uid) {
+  return sbQ("messages", q =>
+    q.select("id,sender_id,receiver_id,content,is_read,channel,created_at")
+     .or(`sender_id.eq.${uid},receiver_id.eq.${uid},receiver_id.is.null`)
+     .order("created_at", { ascending: false })
+     .limit(100)
+  );
+}
+async function sbGetHealthUpdates() {
+  return sbQ("health_updates", q =>
+    q.select("id,patient_id,caregiver_id,blood_pressure,heart_rate,temperature,spo2,respiratory_rate,blood_glucose,weight_kg,notes,severity,created_at")
+     .order("created_at", { ascending: false })
+     .limit(100)
+  );
+}
+async function sbGetBillings() {
+  return sbQ("billings", q =>
+    q.select("id,patient_id,description,amount,discount,tax,total,status,payment_method,due_date,paid_at,notes,created_at")
+     .order("created_at", { ascending: false })
+     .limit(200)
+  );
+}
+async function sbGetNotifications(uid) {
+  return sbQ("notifications", q =>
+    q.select("id,user_id,title,body,type,is_read,created_at")
+     .eq("user_id", uid)
+     .order("created_at", { ascending: false })
+     .limit(50)
+  );
+}
+async function sbGetCaregivers() {
+  return sbQ("profiles", q =>
+    q.select("id,role,full_name,avatar_url,phone,is_active")
+     .eq("role", "caregiver")
+     .limit(100)
+  );
+}
 async function sbGetProfile(uid) {
-  const { data, error } = await supabase.from("profiles").select("*").eq("id", uid).single();
-  if (error) {
-    console.error("profiles", error.message, error.details || error.hint || error.code);
-    toast(`Unable to load profile: ${error.message}`, "error");
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,role,full_name,avatar_url,phone,address,is_active,created_at")
+      .eq("id", uid)
+      .single();
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    console.error("profiles", e.message);
     return null;
   }
-  return data;
 }
 async function sbUpdateProfile(uid, fields) {
   const { error } = await supabase.from("profiles").update({ ...fields, updated_at: new Date().toISOString() }).eq("id", uid);
   return !error;
 }
 
-// Patients — match exact schema columns
-async function sbGetPatients() {
-  return sbQ("patients", q => q.select("id,full_name,age,gender,diagnosis,medical_history,allergies,current_medications,status,assigned_caregiver,family_contact,emergency_contact,address,date_of_birth,blood_type,created_by,created_at,updated_at").order("created_at", { ascending: false }));
-}
+// Mutations
 async function sbAddPatient(p) {
-  const { error } = await supabase.from("patients").insert([{
-    full_name: p.full_name,
-    age: p.age ? Number(p.age) : null,
-    gender: p.gender || null,
-    diagnosis: p.diagnosis,
-    medical_history: p.medical_history || null,
-    allergies: p.allergies || null,
-    current_medications: p.current_medications || null,
-    status: p.status || "active",
-    family_contact: p.family_contact || null,
-    emergency_contact: p.emergency_contact || null,
-    address: p.address || null,
-    blood_type: p.blood_type || null,
+  const { data, error } = await supabase.from("patients").insert([{
+    full_name: p.full_name, age: p.age ? Number(p.age) : null, gender: p.gender || null,
+    diagnosis: p.diagnosis, medical_history: p.medical_history || null, allergies: p.allergies || null,
+    current_medications: p.current_medications || null, status: p.status || "active",
+    family_contact: p.family_contact || null, emergency_contact: p.emergency_contact || null,
+    address: p.address || null, blood_type: p.blood_type || null,
     assigned_caregiver: p.assigned_caregiver || null,
-  }]);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
+  }]).select("id,full_name,age,gender,diagnosis,medical_history,allergies,current_medications,status,assigned_caregiver,family_contact,emergency_contact,address,blood_type,created_by,created_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
 async function sbUpdatePatient(id, fields) {
   const allowed = ["full_name","age","gender","diagnosis","medical_history","allergies","current_medications","status","family_contact","emergency_contact","address","blood_type","assigned_caregiver"];
   const update = {};
   allowed.forEach(k => { if (fields[k] !== undefined) update[k] = fields[k]; });
   if (update.age) update.age = Number(update.age);
-  const { error } = await supabase.from("patients").update(update).eq("id", id);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
+  const { data, error } = await supabase.from("patients").update(update).eq("id", id)
+    .select("id,full_name,age,gender,diagnosis,medical_history,allergies,current_medications,status,assigned_caregiver,family_contact,emergency_contact,address,blood_type,created_by,created_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
 async function sbDeletePatient(id) {
   const { error } = await supabase.from("patients").delete().eq("id", id);
   if (error) { toast(error.message, "error"); return false; }
   return true;
 }
-
-// Appointments — match exact schema
-async function sbGetAppointments() {
-  return sbQ("appointments", q => q.select("id,title,patient_id,caregiver_id,date,time,duration_mins,location,notes,status,reminder_sent,created_by,created_at,updated_at").order("date").order("time"));
-}
 async function sbAddAppointment(a) {
-  const { error } = await supabase.from("appointments").insert([{
-    title: a.title,
-    patient_id: a.patient_id,
-    caregiver_id: a.caregiver_id || null,
-    date: a.date,
-    time: a.time,
-    duration_mins: Number(a.duration_mins) || 60,
-    notes: a.notes || null,
-    status: a.status || "scheduled",
-    created_by: a.created_by || null,
-  }]);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
+  const { data, error } = await supabase.from("appointments").insert([{
+    title: a.title, patient_id: a.patient_id, caregiver_id: a.caregiver_id || null,
+    date: a.date, time: a.time, duration_mins: Number(a.duration_mins) || 60,
+    notes: a.notes || null, status: a.status || "scheduled", created_by: a.created_by || null,
+  }]).select("id,title,patient_id,caregiver_id,date,time,duration_mins,notes,status,created_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
 async function sbUpdateAppointmentStatus(id, status) {
-  const { error } = await supabase.from("appointments").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+  const { data, error } = await supabase.from("appointments").update({ status, updated_at: new Date().toISOString() }).eq("id", id)
+    .select("id,status").single();
   if (error) { toast(error.message, "error"); return false; }
-  return true;
-}
-
-// Messages — match exact schema
-async function sbGetMessages(uid) {
-  return sbQ("messages", q => q.select("id,sender_id,receiver_id,content,is_read,read_at,channel,created_at").or(`sender_id.eq.${uid},receiver_id.eq.${uid},receiver_id.is.null`).order("created_at"));
+  return data;
 }
 async function sbSendMessage(msg) {
-  const { error } = await supabase.from("messages").insert([{
-    sender_id: msg.sender_id,
-    receiver_id: msg.receiver_id || null,
-    content: msg.content,
-    channel: msg.channel || "general",
-  }]);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
-}
-
-// Health updates — match exact schema
-async function sbGetHealthUpdates() {
-  return sbQ("health_updates", q => q.select("id,patient_id,caregiver_id,blood_pressure,heart_rate,temperature,spo2,respiratory_rate,blood_glucose,weight_kg,vitals,notes,severity,created_at").order("created_at", { ascending: false }));
+  const { data, error } = await supabase.from("messages").insert([{
+    sender_id: msg.sender_id, receiver_id: msg.receiver_id || null,
+    content: msg.content, channel: msg.channel || "general",
+  }]).select("id,sender_id,receiver_id,content,is_read,channel,created_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
 async function sbLogVitals(v) {
-  const { error } = await supabase.from("health_updates").insert([{
-    patient_id: v.patient_id,
-    caregiver_id: v.caregiver_id || null,
-    blood_pressure: v.bp || null,
-    heart_rate: v.hr || null,
-    temperature: v.temp || null,
-    spo2: v.spo2 || null,
-    respiratory_rate: v.respiratory_rate || null,
-    blood_glucose: v.blood_glucose || null,
+  const { data, error } = await supabase.from("health_updates").insert([{
+    patient_id: v.patient_id, caregiver_id: v.caregiver_id || null,
+    blood_pressure: v.bp || null, heart_rate: v.hr || null,
+    temperature: v.temp || null, spo2: v.spo2 || null,
+    respiratory_rate: v.respiratory_rate || null, blood_glucose: v.blood_glucose || null,
     weight_kg: v.weight_kg || null,
     vitals: { bp: v.bp, hr: v.hr, temp: v.temp, spo2: v.spo2 },
-    notes: v.notes || null,
-    severity: v.severity || "normal",
-  }]);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
-}
-
-// Billings — match exact schema (note: total is computed column, don't insert it)
-async function sbGetBillings() {
-  return sbQ("billings", q => q.select("id,patient_id,issued_by,description,amount,discount,tax,total,status,payment_method,due_date,paid_at,notes,created_at,updated_at").order("created_at", { ascending: false }));
+    notes: v.notes || null, severity: v.severity || "normal",
+  }]).select("id,patient_id,caregiver_id,blood_pressure,heart_rate,temperature,spo2,respiratory_rate,blood_glucose,weight_kg,notes,severity,created_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
 async function sbAddBilling(b) {
-  const { error } = await supabase.from("billings").insert([{
-    patient_id: b.patient_id,
-    description: b.description,
-    amount: Number(b.amount),
-    discount: 0,
-    tax: 0,
-    status: b.status || "pending",
-    payment_method: b.payment_method || null,
-    due_date: b.due_date || null,
-    notes: b.notes || null,
-  }]);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
+  const { data, error } = await supabase.from("billings").insert([{
+    patient_id: b.patient_id, description: b.description,
+    amount: Number(b.amount), discount: 0, tax: 0,
+    status: b.status || "pending", payment_method: b.payment_method || null,
+    due_date: b.due_date || null, notes: b.notes || null,
+  }]).select("id,patient_id,description,amount,discount,tax,total,status,payment_method,due_date,paid_at,notes,created_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
 async function sbUpdateBillingStatus(id, status, method) {
   const update = { status, updated_at: new Date().toISOString() };
   if (method) update.payment_method = method;
   if (status === "paid") update.paid_at = new Date().toISOString();
-  const { error } = await supabase.from("billings").update(update).eq("id", id);
-  if (error) { toast(error.message, "error"); return false; }
-  return true;
+  const { data, error } = await supabase.from("billings").update(update).eq("id", id)
+    .select("id,status,payment_method,paid_at").single();
+  if (error) { toast(error.message, "error"); return null; }
+  return data;
 }
-
-// Notifications — match exact schema
-async function sbGetNotifications(uid) {
-  return sbQ("notifications", q => q.select("id,user_id,title,body,type,is_read,link,created_at").eq("user_id", uid).order("created_at", { ascending: false }));
-}
-async function sbMarkNotifRead(id) {
-  await supabase.from("notifications").update({ is_read: true }).eq("id", id);
-}
-
-// Profiles list (caregivers)
-async function sbGetProfiles() {
-  return sbQ("profiles", q => q.select("id,role,full_name,avatar_url,phone,address,is_active,created_at").order("created_at", { ascending: false }));
-}
-
-// Upload avatar
 async function sbUploadProfileImage(file, profileId) {
   if (!file) return null;
   const ext = file.name.split(".").pop();
   const path = `${profileId}/${Date.now()}.${ext}`;
   const { error: upErr } = await supabase.storage.from("profile-images").upload(path, file, { cacheControl: "3600", upsert: true });
   if (upErr) { console.error("upload", upErr.message); return null; }
-  const { data } = await supabase.storage.from("profile-images").getPublicUrl(path);
+  const { data } = supabase.storage.from("profile-images").getPublicUrl(path);
   return data?.publicUrl || null;
 }
 
+// ── Helpers ──────────────────────────────────────────────────
 function normalizePhone(v) { return String(v || "").replace(/\D/g, ""); }
-
 function resolveLinkedPatient(profile, patients) {
   if (!profile || !Array.isArray(patients)) return null;
   const profilePhone = normalizePhone(profile?.phone);
@@ -742,13 +456,10 @@ function resolveLinkedPatient(profile, patients) {
     || (profilePhone ? patients.find(p => normalizePhone(p.family_contact) === profilePhone) : null)
     || null;
 }
-
 function resolveAssignedCaregivers(patient, caregivers) {
   if (!Array.isArray(caregivers)) return [];
   if (!patient) return caregivers;
   if (patient.assigned_caregiver) return caregivers.filter(c => c.id === patient.assigned_caregiver);
-  if (Array.isArray(patient.assigned_caregivers) && patient.assigned_caregivers.length)
-    return caregivers.filter(c => patient.assigned_caregivers.includes(c.id));
   return caregivers;
 }
 
@@ -756,20 +467,17 @@ function resolveAssignedCaregivers(patient, caregivers) {
 function Spinner({ size = 18, color }) {
   return <div className="spinner" style={{ width: size, height: size, borderTopColor: color || C.jade }} />;
 }
-
 function Avatar({ name, size = 36, src }) {
-  if (src) return <img src={src} alt={name || "avatar"} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(13,148,136,.15)", flexShrink: 0 }} />;
+  if (src) return <img src={src} alt={name} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(13,148,136,.15)", flexShrink: 0 }} />;
   const initials = (name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   const palettes = [["#CCFBF1","#0F766E"],["#D1FAE5","#059669"],["#E0F2FE","#0369A1"],["#EDE9FE","#6D28D9"],["#FEF3C7","#B45309"],["#FFE4E6","#BE123C"]];
   const [bg, fg] = palettes[(name || "?").charCodeAt(0) % palettes.length];
   return <div className="avatar" style={{ width: size, height: size, fontSize: size * 0.36, background: bg, color: fg }}>{initials}</div>;
 }
-
 function Badge({ status }) {
   const map = { active:"badge-green", stable:"badge-teal", critical:"badge-red", scheduled:"badge-amber", completed:"badge-green", cancelled:"badge-red", in_progress:"badge-purple", paid:"badge-green", pending:"badge-amber", overdue:"badge-red", discharged:"badge-blue", normal:"badge-green", warning:"badge-amber", caregiver:"badge-teal", admin:"badge-purple", family:"badge-blue", patient:"badge-green", no_show:"badge-red" };
   return <span className={`badge ${map[status] || "badge-teal"}`}>{status?.replace(/_/g, " ") || "—"}</span>;
 }
-
 function Modal({ open, onClose, title, children, footer, wide }) {
   if (!open) return null;
   return (
@@ -777,9 +485,7 @@ function Modal({ open, onClose, title, children, footer, wide }) {
       <div className="modal" style={{ maxWidth: wide ? 640 : 520 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:18 }}>
           <h3 className="modal-title" style={{ margin:0 }}>{title}</h3>
-          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:C.slateL, display:"flex", padding:4, borderRadius:8 }}>
-            <Icon name="x" size={20} />
-          </button>
+          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:C.slateL, display:"flex", padding:4, borderRadius:8 }}><Icon name="x" size={20}/></button>
         </div>
         {children}
         {footer && <div className="modal-footer">{footer}</div>}
@@ -787,18 +493,30 @@ function Modal({ open, onClose, title, children, footer, wide }) {
     </div>
   );
 }
-
 function FG({ label, children, style }) {
   return <div style={{ marginBottom:12, ...style }}><label>{label}</label>{children}</div>;
 }
-
 function EmptyState({ icon, message }) {
   return (
     <div className="empty-state">
-      <div className="empty-state-icon"><Icon name={icon || "info"} size={22} color={C.jade} /></div>
+      <div className="empty-state-icon"><Icon name={icon || "info"} size={22} color={C.jade}/></div>
       <p>{message || "No records found."}</p>
     </div>
   );
+}
+
+// Skeleton loader for tables
+function SkeletonRows({ rows = 4 }) {
+  return Array.from({ length: rows }).map((_, i) => (
+    <div key={i} className="skel-row" style={{ animationDelay:`${i*.08}s` }}>
+      <div className="skeleton skel-circle" style={{ width:36, height:36 }}/>
+      <div style={{ flex:1 }}>
+        <div className="skeleton skel-line" style={{ height:13, width:"60%", marginBottom:6 }}/>
+        <div className="skeleton skel-line" style={{ height:11, width:"40%" }}/>
+      </div>
+      <div className="skeleton skel-line" style={{ height:22, width:70, borderRadius:99 }}/>
+    </div>
+  ));
 }
 
 // ── AUTH SCREEN ──────────────────────────────────────────────
@@ -819,8 +537,7 @@ function AuthScreen({ onLogin }) {
           options: { data: { full_name: form.full_name, role: form.role } }
         });
         if (res.error) throw res.error;
-        let user = res.data?.user;
-        let session = res.data?.session;
+        let user = res.data?.user, session = res.data?.session;
         if (!session) {
           const s2 = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
           if (s2.error) { toast("Account created. Check email to confirm.", "info"); setLoading(false); return; }
@@ -844,17 +561,17 @@ function AuthScreen({ onLogin }) {
   }
 
   const features = [
-    { icon:"users",    title:"Patient Management", desc:"Complete records, history & care plans" },
-    { icon:"calendar", title:"Smart Scheduling",   desc:"Appointments, reminders & caregiver sync" },
-    { icon:"heart",    title:"Health Monitoring",  desc:"Real-time vitals & critical alerts" },
-    { icon:"message",  title:"Team Messaging",     desc:"Instant communication across all staff" },
-    { icon:"creditcard",title:"Billing & Finance", desc:"Transparent invoicing & payment tracking" },
+    { icon:"users",     title:"Patient Management",  desc:"Complete records, history & care plans" },
+    { icon:"calendar",  title:"Smart Scheduling",    desc:"Appointments, reminders & caregiver sync" },
+    { icon:"heart",     title:"Health Monitoring",   desc:"Real-time vitals & critical alerts" },
+    { icon:"message",   title:"Team Messaging",      desc:"Instant communication across all staff" },
+    { icon:"creditcard",title:"Billing & Finance",   desc:"Transparent invoicing & payment tracking" },
   ];
 
   return (
     <div className="auth-screen">
       <div className="auth-left">
-        <div className="auth-left-orb1"/><div className="auth-left-orb2"/><div className="auth-left-grid"/>
+        <div className="auth-left-orb1"/><div className="auth-left-orb2"/>
         <div style={{ position:"relative", zIndex:1 }}>
           <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:32 }}>
             <div className="sidebar-logo-icon" style={{ width:46, height:46, borderRadius:13 }}>
@@ -887,7 +604,6 @@ function AuthScreen({ onLogin }) {
 
       <div className="auth-right">
         <div className="auth-card fade-up">
-          {/* Mobile logo */}
           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:24 }}>
             <div className="sidebar-logo-icon" style={{ width:40, height:40, borderRadius:11 }}>
               <Icon name="heart" size={18} color="#fff"/>
@@ -898,9 +614,7 @@ function AuthScreen({ onLogin }) {
             </div>
           </div>
           <h2 className="auth-card-title">{mode==="login"?"Welcome back":"Create account"}</h2>
-          <p className="auth-card-sub">
-            {mode==="login"?"Sign in to continue to your CareNest dashboard.":"Join CareNest and start managing care today."}
-          </p>
+          <p className="auth-card-sub">{mode==="login"?"Sign in to continue to your CareNest dashboard.":"Join CareNest and start managing care today."}</p>
           {mode==="register" && (
             <div className="auth-form-group">
               <label>Full Name</label>
@@ -960,13 +674,11 @@ function Dashboard({ patients, appointments, billings, healthUpdates, notificati
   const unreadNotifs = notifications.filter(n=>!n.is_read).length;
 
   const stats = [
-    { icon:"users",      val:patients.length,     label:"Total Patients",       color:C.jade,   bg:"#D1FAE5", trend:`${patients.filter(p=>p.status==="active").length} active` },
-    { icon:"calendar",   val:todayAppts.length,   label:"Today's Schedule",     color:C.violet, bg:"#EDE9FE", trend:`${appointments.filter(a=>a.status==="scheduled").length} scheduled` },
-    { icon:"alert",      val:critical,            label:"Critical Cases",        color:C.rose,   bg:"#FFE4E6", trend:"Needs attention" },
+    { icon:"users",      val:patients.length,  label:"Total Patients",   color:C.jade,   bg:"#D1FAE5", trend:`${patients.filter(p=>p.status==="active").length} active` },
+    { icon:"calendar",   val:todayAppts.length,label:"Today's Schedule", color:C.violet, bg:"#EDE9FE", trend:`${appointments.filter(a=>a.status==="scheduled").length} scheduled` },
+    { icon:"alert",      val:critical,         label:"Critical Cases",   color:C.rose,   bg:"#FFE4E6", trend:"Needs attention" },
     { icon:"creditcard", val:`₱${pendingBills.toLocaleString()}`, label:"Pending Billing", color:C.amber, bg:"#FEF3C7", trend:`${billings.filter(b=>b.status==="pending").length} invoices` },
   ];
-
-  const recentHealth = healthUpdates.slice(0,4);
 
   return (
     <div className="fade-up">
@@ -985,7 +697,7 @@ function Dashboard({ patients, appointments, billings, healthUpdates, notificati
             </div>
           )}
           <button className="btn btn-primary" style={{ padding:"9px 16px", fontSize:13 }} onClick={()=>onNav("patients")}>
-            <Icon name="plus" size={14}/> <span className="hide-xs">New Patient</span>
+            <Icon name="plus" size={14}/> New Patient
           </button>
         </div>
       </div>
@@ -1029,11 +741,11 @@ function Dashboard({ patients, appointments, billings, healthUpdates, notificati
               <h3 className="section-title">Health Alerts</h3>
               <button className="btn btn-ghost" style={{ padding:"6px 12px", fontSize:12 }} onClick={()=>onNav("health")}>View All</button>
             </div>
-            {recentHealth.map((u,i)=>{
+            {healthUpdates.slice(0,4).map((u,i)=>{
               const pt = patients.find(p=>p.id===u.patient_id);
               const isCrit = u.severity==="critical";
               return (
-                <div key={u.id} style={{ display:"flex", gap:9, marginBottom:i<recentHealth.length-1?10:0, alignItems:"flex-start", padding:9, borderRadius:10, background:isCrit?"#FFF1F2":"transparent", border:isCrit?"1px solid #FFE4E6":"none" }}>
+                <div key={u.id} style={{ display:"flex", gap:9, marginBottom:i<3?10:0, alignItems:"flex-start", padding:9, borderRadius:10, background:isCrit?"#FFF1F2":"transparent", border:isCrit?"1px solid #FFE4E6":"none" }}>
                   <Avatar name={pt?.full_name||"?"} size={30}/>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -1050,15 +762,15 @@ function Dashboard({ patients, appointments, billings, healthUpdates, notificati
                 </div>
               );
             })}
-            {recentHealth.length===0 && <EmptyState icon="activity" message="No health updates yet."/>}
+            {healthUpdates.length===0 && <EmptyState icon="activity" message="No health updates yet."/>}
           </div>
 
           <div className="card" style={{ background:"linear-gradient(135deg,var(--onyx),var(--pine))", color:"#fff", border:"none" }}>
             <h3 style={{ fontFamily:"'DM Serif Display',serif", fontSize:14, marginBottom:12, color:"#fff" }}>Billing Overview</h3>
             {[
-              { label:"Collected", val:`₱${billings.filter(b=>b.status==="paid").reduce((s,b)=>s+Number(b.amount),0).toLocaleString()}`, color:C.jade },
-              { label:"Outstanding", val:`₱${billings.filter(b=>b.status==="pending").reduce((s,b)=>s+Number(b.amount),0).toLocaleString()}`, color:C.amber },
-              { label:"Overdue", val:`₱${billings.filter(b=>b.status==="overdue").reduce((s,b)=>s+Number(b.amount),0).toLocaleString()}`, color:C.rose },
+              { label:"Collected",   val:`₱${billings.filter(b=>b.status==="paid").reduce((s,b)=>s+Number(b.amount),0).toLocaleString()}`,    color:C.jade  },
+              { label:"Outstanding", val:`₱${billings.filter(b=>b.status==="pending").reduce((s,b)=>s+Number(b.amount),0).toLocaleString()}`,  color:C.amber },
+              { label:"Overdue",     val:`₱${billings.filter(b=>b.status==="overdue").reduce((s,b)=>s+Number(b.amount),0).toLocaleString()}`,  color:C.rose  },
             ].map(r=>(
               <div key={r.label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:"1px solid rgba(255,255,255,.06)" }}>
                 <span style={{ fontSize:12.5, color:"rgba(148,163,184,.7)" }}>{r.label}</span>
@@ -1083,7 +795,7 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
   const [bookForm, setBookForm] = useState({ caregiver_id:"", date:"", time:"", notes:"", duration_mins:60 });
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const emptyForm = { full_name:"", age:"", gender:"", diagnosis:"", medical_history:"", allergies:"", current_medications:"", status:"active", family_contact:"", emergency_contact:"", blood_type:"", address:"", assigned_caregiver:"" };
   const [form, setForm] = useState(emptyForm);
@@ -1092,11 +804,7 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
   const isPatientRole = profile?.role==="patient";
   const isFamilyRole = profile?.role==="family";
   const linkedPatient = resolveLinkedPatient(profile, patients);
-
-  const visiblePatients = (isPatientRole||isFamilyRole)
-    ? (linkedPatient?[linkedPatient]:[])
-    : patients;
-
+  const visiblePatients = (isPatientRole||isFamilyRole) ? (linkedPatient?[linkedPatient]:[]) : patients;
   const filtered = visiblePatients.filter(p=>{
     const q=search.toLowerCase();
     return (!q || p.full_name.toLowerCase().includes(q) || p.diagnosis.toLowerCase().includes(q))
@@ -1112,26 +820,35 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
 
   async function save() {
     if (!form.full_name||!form.diagnosis) { toast("Name and diagnosis are required","error"); return; }
-    setLoading(true);
+    setSaving(true);
     const payload = { ...form, age: form.age?Number(form.age):null, assigned_caregiver: form.assigned_caregiver||null };
     if (showEdit) {
-      const ok = await sbUpdatePatient(showEdit, payload);
-      if (ok) { setPatients(await sbGetPatients()); toast("Patient updated"); setShowEdit(null); }
+      const updated = await sbUpdatePatient(showEdit, payload);
+      if (updated) {
+        // Optimistically update local state — no full re-fetch
+        setPatients(prev => prev.map(p => p.id === showEdit ? { ...p, ...updated } : p));
+        toast("Patient updated"); setShowEdit(null);
+      }
     } else {
-      const ok = await sbAddPatient(payload);
-      if (ok) { setPatients(await sbGetPatients()); toast("Patient added"); setShowAdd(false); setForm(emptyForm); }
+      const created = await sbAddPatient(payload);
+      if (created) {
+        setPatients(prev => [created, ...prev]);
+        toast("Patient added"); setShowAdd(false); setForm(emptyForm);
+      }
     }
-    setLoading(false);
+    setSaving(false);
   }
 
   async function del(id) {
     if (!window.confirm("Remove this patient record permanently?")) return;
     const ok = await sbDeletePatient(id);
-    if (ok) { setPatients(await sbGetPatients()); toast("Patient removed"); }
+    if (ok) {
+      setPatients(prev => prev.filter(p => p.id !== id));
+      toast("Patient removed");
+    }
   }
 
   function openEdit(p) { setForm({...emptyForm,...p, age:p.age?.toString()||"", assigned_caregiver:p.assigned_caregiver||""}); setShowEdit(p.id); }
-
   const statusCounts = ["active","stable","critical","discharged"].map(s=>({status:s, count:visiblePatients.filter(p=>p.status===s).length}));
 
   return (
@@ -1148,7 +865,6 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
         )}
       </div>
 
-      {/* Status filter pills */}
       <div style={{ display:"flex", gap:7, marginBottom:16, flexWrap:"wrap" }}>
         {[{label:"All",val:"all"}, ...statusCounts.map(s=>({label:`${s.status.charAt(0).toUpperCase()+s.status.slice(1)} (${s.count})`,val:s.status}))].map(f=>(
           <button key={f.val} className={`btn ${filterStatus===f.val?"btn-primary":"btn-ghost"}`}
@@ -1166,12 +882,9 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
           <span style={{ fontSize:12, color:C.slateL, fontWeight:500, flexShrink:0 }}>{filtered.length} found</span>
         </div>
 
-        {/* Desktop table */}
         <div className="data-table-wrap" style={{ overflowX:"auto" }}>
           <table className="data-table">
-            <thead>
-              <tr><th>Patient</th><th>Age/Gender</th><th>Diagnosis</th><th>Blood Type</th><th>Status</th><th>Registered</th><th>Actions</th></tr>
-            </thead>
+            <thead><tr><th>Patient</th><th>Age/Gender</th><th>Diagnosis</th><th>Blood Type</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead>
             <tbody>
               {filtered.map(p=>(
                 <tr key={p.id}>
@@ -1212,7 +925,6 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
           </table>
         </div>
 
-        {/* Mobile cards */}
         <div className="mobile-list">
           {filtered.map((p,i)=>(
             <div key={p.id} className="mobile-card" style={{ animationDelay:`${i*.04}s` }}>
@@ -1252,12 +964,11 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
         </div>
       </div>
 
-      {/* Add/Edit Modal */}
       <Modal open={showAdd||!!showEdit} onClose={()=>{setShowAdd(false);setShowEdit(null);}} title={showEdit?"Edit Patient":"Add New Patient"} wide
         footer={<>
           <button className="btn btn-ghost" onClick={()=>{setShowAdd(false);setShowEdit(null);}}>Cancel</button>
-          <button className="btn btn-primary" onClick={save} disabled={loading}>
-            {loading?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> {showEdit?"Update":"Save"}</>}
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> {showEdit?"Update":"Save"}</>}
           </button>
         </>}>
         <div className="form-row">
@@ -1305,7 +1016,6 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
         </div>
       </Modal>
 
-      {/* Book Caregiver Modal */}
       <Modal open={!!showBook} onClose={()=>setShowBook(null)} title="Book Caregiver"
         footer={<>
           <button className="btn btn-ghost" onClick={()=>setShowBook(null)}>Cancel</button>
@@ -1313,14 +1023,17 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
             if (!bookForm.caregiver_id||!bookForm.date||!bookForm.time) { toast("Select caregiver, date and time","error"); return; }
             const selPt = patients.find(x=>x.id===showBook)||linkedPatient;
             if (!selPt) { toast("No linked patient found","error"); return; }
-            const ok = await sbAddAppointment({
+            const created = await sbAddAppointment({
               title:`Appointment – ${selPt.full_name}`,
               patient_id:selPt.id, caregiver_id:bookForm.caregiver_id,
               date:bookForm.date, time:bookForm.time,
               duration_mins:Number(bookForm.duration_mins)||60,
               notes:bookForm.notes, created_by:profile?.id||null,
             });
-            if (ok) { toast("Appointment requested"); setShowBook(null); if (setAppointments) setAppointments(await sbGetAppointments()); }
+            if (created) {
+              if (setAppointments) setAppointments(prev=>[created,...prev]);
+              toast("Appointment requested"); setShowBook(null);
+            }
           }}>Request Appointment</button>
         </>}>
         {(()=>{
@@ -1357,7 +1070,7 @@ function PatientsModule({ patients, setPatients, profile, setAppointments, careg
 function AppointmentsModule({ appointments, setAppointments, patients, profile, caregivers }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("all");
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title:"", patient_id:"", caregiver_id:"", date:"", time:"", notes:"", status:"scheduled", duration_mins:60 });
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
@@ -1368,23 +1081,26 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
   async function addAppt() {
     const patientId = isPatientLike ? linkedPatient?.id : form.patient_id;
     if (!form.title||!patientId||!form.date||!form.time) { toast("Fill all required fields","error"); return; }
-    setLoading(true);
-    const ok = await sbAddAppointment({
+    setSaving(true);
+    const created = await sbAddAppointment({
       ...form, patient_id:patientId, duration_mins:Number(form.duration_mins)||60,
       created_by:profile?.id||null, caregiver_id:form.caregiver_id||null,
     });
-    if (ok) {
-      setAppointments(await sbGetAppointments());
+    if (created) {
+      setAppointments(prev => [created, ...prev]);
       toast("Appointment scheduled");
       setShowAdd(false);
       setForm({ title:"", patient_id:"", caregiver_id:"", date:"", time:"", notes:"", status:"scheduled", duration_mins:60 });
     }
-    setLoading(false);
+    setSaving(false);
   }
 
   async function changeStatus(id, status) {
-    const ok = await sbUpdateAppointmentStatus(id, status);
-    if (ok) { setAppointments(await sbGetAppointments()); toast(`Marked as ${status}`); }
+    const updated = await sbUpdateAppointmentStatus(id, status);
+    if (updated) {
+      setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+      toast(`Marked as ${status}`);
+    }
   }
 
   const statusColors = { scheduled:C.amber, completed:C.jade, cancelled:C.rose, in_progress:C.violet, no_show:C.slateL };
@@ -1432,19 +1148,13 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
               {pt && (
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"7px 9px", background:"#F8FAFC", borderRadius:9 }}>
                   <Avatar name={pt.full_name} size={24}/>
-                  <div>
-                    <div style={{ fontSize:12.5, fontWeight:600 }}>{pt.full_name}</div>
-                    <div style={{ fontSize:11, color:C.slateL }}>{pt.diagnosis}</div>
-                  </div>
+                  <div><div style={{ fontSize:12.5, fontWeight:600 }}>{pt.full_name}</div><div style={{ fontSize:11, color:C.slateL }}>{pt.diagnosis}</div></div>
                 </div>
               )}
               {cg && (
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"7px 9px", background:"#EFF6FF", borderRadius:9, border:"1px solid #DBEAFE" }}>
                   <Avatar name={cg.full_name} size={24}/>
-                  <div>
-                    <div style={{ fontSize:12.5, fontWeight:700, color:C.violet }}>{cg.full_name}</div>
-                    <div style={{ fontSize:11, color:C.slateL }}>Caregiver</div>
-                  </div>
+                  <div><div style={{ fontSize:12.5, fontWeight:700, color:C.violet }}>{cg.full_name}</div><div style={{ fontSize:11, color:C.slateL }}>Caregiver</div></div>
                 </div>
               )}
               {a.notes && <p style={{ fontSize:12.5, color:C.slateM, marginBottom:10, lineHeight:1.5 }}>{a.notes}</p>}
@@ -1469,8 +1179,8 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
       <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Schedule Appointment"
         footer={<>
           <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancel</button>
-          <button className="btn btn-primary" onClick={addAppt} disabled={loading}>
-            {loading?<Spinner color="#fff"/>:<><Icon name="calendar" size={14}/> Schedule</>}
+          <button className="btn btn-primary" onClick={addAppt} disabled={saving}>
+            {saving?<Spinner color="#fff"/>:<><Icon name="calendar" size={14}/> Schedule</>}
           </button>
         </>}>
         <FG label="Title *"><input value={form.title} onChange={set("title")} placeholder="Visit / Therapy session"/></FG>
@@ -1492,8 +1202,7 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
               <option value="">Select caregiver…</option>
               {(()=>{
                 const selPt = isPatientLike ? linkedPatient : patients.find(p=>p.id===form.patient_id);
-                const opts = resolveAssignedCaregivers(selPt, caregivers);
-                return (opts.length?opts:caregivers).map(c=><option key={c.id} value={c.id}>{c.full_name}</option>);
+                return resolveAssignedCaregivers(selPt, caregivers).map(c=><option key={c.id} value={c.id}>{c.full_name}</option>);
               })()}
             </select>
           </FG>
@@ -1522,15 +1231,15 @@ function AppointmentsModule({ appointments, setAppointments, patients, profile, 
 // ── HEALTH MODULE ────────────────────────────────────────────
 function HealthModule({ healthUpdates, setHealthUpdates, patients, profile }) {
   const [showLog, setShowLog] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [filterPt, setFilterPt] = useState("all");
   const [form, setForm] = useState({ patient_id:"", bp:"", hr:"", temp:"", spo2:"", respiratory_rate:"", blood_glucose:"", weight_kg:"", notes:"", severity:"normal" });
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
   async function logVitals() {
     if (!form.patient_id) { toast("Select a patient","error"); return; }
-    setLoading(true);
-    const ok = await sbLogVitals({
+    setSaving(true);
+    const created = await sbLogVitals({
       patient_id:form.patient_id,
       caregiver_id:profile?.role==="caregiver"?profile?.id:null,
       bp:form.bp, hr:form.hr, temp:form.temp, spo2:form.spo2,
@@ -1538,13 +1247,13 @@ function HealthModule({ healthUpdates, setHealthUpdates, patients, profile }) {
       weight_kg:form.weight_kg?Number(form.weight_kg):null,
       notes:form.notes, severity:form.severity,
     });
-    if (ok) {
-      setHealthUpdates(await sbGetHealthUpdates());
+    if (created) {
+      setHealthUpdates(prev => [created, ...prev]);
       toast("Vitals logged");
       setShowLog(false);
       setForm({ patient_id:"", bp:"", hr:"", temp:"", spo2:"", respiratory_rate:"", blood_glucose:"", weight_kg:"", notes:"", severity:"normal" });
     }
-    setLoading(false);
+    setSaving(false);
   }
 
   const shown = healthUpdates.filter(u=>filterPt==="all"||u.patient_id===filterPt);
@@ -1610,8 +1319,8 @@ function HealthModule({ healthUpdates, setHealthUpdates, patients, profile }) {
       <Modal open={showLog} onClose={()=>setShowLog(false)} title="Log Patient Vitals"
         footer={<>
           <button className="btn btn-ghost" onClick={()=>setShowLog(false)}>Cancel</button>
-          <button className="btn btn-primary" onClick={logVitals} disabled={loading}>
-            {loading?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> Save Vitals</>}
+          <button className="btn btn-primary" onClick={logVitals} disabled={saving}>
+            {saving?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> Save Vitals</>}
           </button>
         </>}>
         <FG label="Patient *">
@@ -1651,20 +1360,26 @@ function HealthModule({ healthUpdates, setHealthUpdates, patients, profile }) {
 // ── MESSAGING MODULE ─────────────────────────────────────────
 function MessagingModule({ messages, setMessages, profile }) {
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
   const endRef = useRef(null);
+
+  // Show messages newest-last for chat UX (they come back newest-first)
+  const sorted = [...messages].reverse();
 
   useEffect(()=>{ endRef.current?.scrollIntoView({ behavior:"smooth" }); },[messages]);
 
   async function send() {
     if (!input.trim()) return;
-    setLoading(true);
-    const ok = await sbSendMessage({ sender_id:profile?.id, receiver_id:null, content:input.trim(), channel:"general" });
-    if (ok) { setMessages(await sbGetMessages(profile?.id)); setInput(""); }
-    setLoading(false);
+    setSending(true);
+    const created = await sbSendMessage({ sender_id:profile?.id, receiver_id:null, content:input.trim(), channel:"general" });
+    if (created) {
+      setMessages(prev => [created, ...prev]); // prepend (newest-first)
+      setInput("");
+    }
+    setSending(false);
   }
 
-  const grouped = messages.reduce((acc,m)=>{
+  const grouped = sorted.reduce((acc,m)=>{
     const day = m.created_at?.split("T")[0]||"today";
     if (!acc[day]) acc[day]=[];
     acc[day].push(m);
@@ -1674,10 +1389,7 @@ function MessagingModule({ messages, setMessages, profile }) {
   return (
     <div className="fade-up">
       <div className="page-header">
-        <div>
-          <h2 className="page-title">Messages</h2>
-          <p className="page-subtitle">Team communication hub</p>
-        </div>
+        <div><h2 className="page-title">Messages</h2><p className="page-subtitle">Team communication hub</p></div>
       </div>
 
       <div className="card" style={{ padding:0, overflow:"hidden" }}>
@@ -1703,10 +1415,9 @@ function MessagingModule({ messages, setMessages, profile }) {
               </div>
               {msgs.map(m=>{
                 const isOut = m.sender_id===profile?.id;
-                // Fetch sender name from profiles if needed
                 return (
                   <div key={m.id} style={{ display:"flex", flexDirection:"column", alignItems:isOut?"flex-end":"flex-start", marginBottom:4 }}>
-                    {!isOut && <span style={{ fontSize:10.5, color:C.slateL, marginLeft:4, marginBottom:2 }}>{m.sender_name||"Team"}</span>}
+                    {!isOut && <span style={{ fontSize:10.5, color:C.slateL, marginLeft:4, marginBottom:2 }}>Team</span>}
                     <div className={`msg-bubble ${isOut?"msg-out":"msg-in"}`}>
                       {m.content}
                       <div className="msg-time">{new Date(m.created_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div>
@@ -1726,8 +1437,8 @@ function MessagingModule({ messages, setMessages, profile }) {
             placeholder="Type a message… (Enter to send)"
             style={{ borderRadius:11, fontSize:14 }}
           />
-          <button className="btn btn-primary" onClick={send} disabled={loading||!input.trim()} style={{ flexShrink:0, borderRadius:11, padding:"10px 14px" }}>
-            {loading?<Spinner color="#fff" size={16}/>:<Icon name="send" size={16}/>}
+          <button className="btn btn-primary" onClick={send} disabled={sending||!input.trim()} style={{ flexShrink:0, borderRadius:11, padding:"10px 14px" }}>
+            {sending?<Spinner color="#fff" size={16}/>:<Icon name="send" size={16}/>}
           </button>
         </div>
       </div>
@@ -1739,53 +1450,52 @@ function MessagingModule({ messages, setMessages, profile }) {
 function BillingModule({ billings, setBillings, patients }) {
   const [showAdd, setShowAdd] = useState(false);
   const [showPayModal, setShowPayModal] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [payMethod, setPayMethod] = useState("cash");
   const [form, setForm] = useState({ patient_id:"", amount:"", description:"", status:"pending", due_date:"", payment_method:"", notes:"" });
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
-  const totalPaid = billings.filter(b=>b.status==="paid").reduce((s,b)=>s+Number(b.amount),0);
+  const totalPaid    = billings.filter(b=>b.status==="paid").reduce((s,b)=>s+Number(b.amount),0);
   const totalPending = billings.filter(b=>b.status==="pending").reduce((s,b)=>s+Number(b.amount),0);
   const totalOverdue = billings.filter(b=>b.status==="overdue").reduce((s,b)=>s+Number(b.amount),0);
   const filtered = billings.filter(b=>filterStatus==="all"||b.status===filterStatus);
 
   async function addBilling() {
     if (!form.patient_id||!form.amount||!form.description) { toast("Fill required fields","error"); return; }
-    setLoading(true);
-    const ok = await sbAddBilling({ ...form, amount:Number(form.amount) });
-    if (ok) {
-      setBillings(await sbGetBillings());
+    setSaving(true);
+    const created = await sbAddBilling({ ...form, amount:Number(form.amount) });
+    if (created) {
+      setBillings(prev => [created, ...prev]);
       toast("Billing record added");
       setShowAdd(false);
       setForm({ patient_id:"", amount:"", description:"", status:"pending", due_date:"", payment_method:"", notes:"" });
     }
-    setLoading(false);
+    setSaving(false);
   }
 
   async function markPaid(id) {
-    const ok = await sbUpdateBillingStatus(id,"paid",payMethod);
-    if (ok) { setBillings(await sbGetBillings()); toast("Marked as paid"); setShowPayModal(null); }
+    const updated = await sbUpdateBillingStatus(id,"paid",payMethod);
+    if (updated) {
+      setBillings(prev => prev.map(b => b.id===id ? { ...b, status:"paid", payment_method:payMethod, paid_at:updated.paid_at } : b));
+      toast("Marked as paid"); setShowPayModal(null);
+    }
   }
 
   return (
     <div className="fade-up">
       <div className="page-header">
-        <div>
-          <h2 className="page-title">Billing & Payments</h2>
-          <p className="page-subtitle">Track service charges and payment status</p>
-        </div>
+        <div><h2 className="page-title">Billing & Payments</h2><p className="page-subtitle">Track service charges and payment status</p></div>
         <button className="btn btn-primary" style={{ padding:"9px 16px", fontSize:13 }} onClick={()=>setShowAdd(true)}>
           <Icon name="plus" size={14}/> Add Bill
         </button>
       </div>
 
-      {/* Summary cards */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:22 }}>
         {[
-          { label:"Collected",   val:`₱${totalPaid.toLocaleString()}`,   color:C.jade,  bg:"#D1FAE5", icon:"check" },
-          { label:"Outstanding", val:`₱${totalPending.toLocaleString()}`,color:C.amber, bg:"#FEF3C7", icon:"alert" },
-          { label:"Overdue",     val:`₱${totalOverdue.toLocaleString()}`,color:C.rose,  bg:"#FFE4E6", icon:"creditcard" },
+          { label:"Collected",   val:`₱${totalPaid.toLocaleString()}`,    color:C.jade,  bg:"#D1FAE5", icon:"check" },
+          { label:"Outstanding", val:`₱${totalPending.toLocaleString()}`, color:C.amber, bg:"#FEF3C7", icon:"alert" },
+          { label:"Overdue",     val:`₱${totalOverdue.toLocaleString()}`, color:C.rose,  bg:"#FFE4E6", icon:"creditcard" },
         ].map(s=>(
           <div key={s.label} className="card" style={{ display:"flex", alignItems:"center", gap:12, borderLeft:`3px solid ${s.color}`, padding:"14px 16px" }}>
             <div style={{ width:38, height:38, borderRadius:10, background:s.bg, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -1799,7 +1509,6 @@ function BillingModule({ billings, setBillings, patients }) {
         ))}
       </div>
 
-      {/* Filter */}
       <div style={{ display:"flex", gap:6, marginBottom:16, flexWrap:"wrap" }}>
         {["all","pending","paid","overdue","cancelled"].map(f=>(
           <button key={f} className={`btn ${filterStatus===f?"btn-primary":"btn-ghost"}`}
@@ -1811,7 +1520,6 @@ function BillingModule({ billings, setBillings, patients }) {
       </div>
 
       <div className="card">
-        {/* Desktop table */}
         <div className="data-table-wrap" style={{ overflowX:"auto" }}>
           <table className="data-table">
             <thead><tr><th>Patient</th><th>Description</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Payment</th><th>Action</th></tr></thead>
@@ -1827,7 +1535,7 @@ function BillingModule({ billings, setBillings, patients }) {
                       </div>
                     </td>
                     <td style={{ color:C.slateM, fontSize:13, maxWidth:160 }}>{b.description}</td>
-                    <td><span style={{ fontFamily:"'DM Serif Display',serif", fontSize:16, color:C.slate }}>₱{Number(b.amount).toLocaleString()}</span></td>
+                    <td><span style={{ fontFamily:"'DM Serif Display',serif", fontSize:16 }}>₱{Number(b.amount).toLocaleString()}</span></td>
                     <td style={{ color:C.slateL, fontSize:12 }}>{b.due_date||b.created_at?.split("T")[0]}</td>
                     <td><Badge status={b.status}/></td>
                     <td>{b.payment_method?<span className="tag" style={{ textTransform:"capitalize" }}>{b.payment_method.replace("_"," ")}</span>:<span style={{ color:C.slateXL, fontSize:12 }}>—</span>}</td>
@@ -1847,7 +1555,6 @@ function BillingModule({ billings, setBillings, patients }) {
           </table>
         </div>
 
-        {/* Mobile billing cards */}
         <div className="mobile-list">
           {filtered.map((b,i)=>{
             const pt = patients.find(p=>p.id===b.patient_id);
@@ -1857,10 +1564,10 @@ function BillingModule({ billings, setBillings, patients }) {
                   <Avatar name={pt?.full_name||"?"} size={38}/>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:700, fontSize:13.5, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{pt?.full_name||"Unknown"}</div>
-                    <div style={{ fontSize:12, color:C.slateL, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{b.description}</div>
+                    <div style={{ fontSize:12, color:C.slateL, marginTop:2 }}>{b.description}</div>
                   </div>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:18, color:C.slate }}>₱{Number(b.amount).toLocaleString()}</div>
+                    <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:18 }}>₱{Number(b.amount).toLocaleString()}</div>
                     <Badge status={b.status}/>
                   </div>
                 </div>
@@ -1877,12 +1584,11 @@ function BillingModule({ billings, setBillings, patients }) {
         </div>
       </div>
 
-      {/* Add billing modal */}
       <Modal open={showAdd} onClose={()=>setShowAdd(false)} title="Add Billing Record"
         footer={<>
           <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancel</button>
-          <button className="btn btn-primary" onClick={addBilling} disabled={loading}>
-            {loading?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> Save</>}
+          <button className="btn btn-primary" onClick={addBilling} disabled={saving}>
+            {saving?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> Save</>}
           </button>
         </>}>
         <FG label="Patient *">
@@ -1899,9 +1605,7 @@ function BillingModule({ billings, setBillings, patients }) {
         <div className="form-row">
           <FG label="Status">
             <select value={form.status} onChange={set("status")}>
-              <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-              <option value="overdue">Overdue</option>
+              <option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option>
             </select>
           </FG>
           <FG label="Payment Method">
@@ -1914,7 +1618,6 @@ function BillingModule({ billings, setBillings, patients }) {
         <FG label="Notes"><textarea rows={2} value={form.notes} onChange={set("notes")} placeholder="Additional notes…"/></FG>
       </Modal>
 
-      {/* Mark paid modal */}
       <Modal open={!!showPayModal} onClose={()=>setShowPayModal(null)} title="Record Payment"
         footer={<>
           <button className="btn btn-ghost" onClick={()=>setShowPayModal(null)}>Cancel</button>
@@ -1953,21 +1656,21 @@ function BillingModule({ billings, setBillings, patients }) {
 // ── REPORTS MODULE ───────────────────────────────────────────
 function ReportsModule({ patients, appointments, billings, healthUpdates }) {
   const totalBilled = billings.reduce((s,b)=>s+Number(b.amount),0);
-  const totalPaid = billings.filter(b=>b.status==="paid").reduce((s,b)=>s+Number(b.amount),0);
+  const totalPaid   = billings.filter(b=>b.status==="paid").reduce((s,b)=>s+Number(b.amount),0);
 
   const summaryStats = [
-    { label:"Total Patients",     val:patients.length,                                              color:C.jade },
-    { label:"Active",             val:patients.filter(p=>p.status==="active").length,               color:C.jade },
-    { label:"Critical",           val:patients.filter(p=>p.status==="critical").length,             color:C.rose },
-    { label:"Stable",             val:patients.filter(p=>p.status==="stable").length,               color:C.sky },
-    { label:"Total Appointments", val:appointments.length,                                          color:C.violet },
-    { label:"Completed",          val:appointments.filter(a=>a.status==="completed").length,        color:C.jade },
-    { label:"Health Records",     val:healthUpdates.length,                                         color:C.amber },
-    { label:"Critical Vitals",    val:healthUpdates.filter(h=>h.severity==="critical").length,      color:C.rose },
-    { label:"Total Billed",       val:`₱${totalBilled.toLocaleString()}`,                          color:C.amber },
-    { label:"Collected",          val:`₱${totalPaid.toLocaleString()}`,                            color:C.jade },
-    { label:"Outstanding",        val:`₱${(totalBilled-totalPaid).toLocaleString()}`,              color:C.rose },
-    { label:"Collection Rate",    val:totalBilled>0?`${Math.round(totalPaid/totalBilled*100)}%`:"0%", color:C.jade },
+    { label:"Total Patients",     val:patients.length,                                                  color:C.jade },
+    { label:"Active",             val:patients.filter(p=>p.status==="active").length,                   color:C.jade },
+    { label:"Critical",           val:patients.filter(p=>p.status==="critical").length,                 color:C.rose },
+    { label:"Stable",             val:patients.filter(p=>p.status==="stable").length,                   color:C.sky  },
+    { label:"Total Appointments", val:appointments.length,                                              color:C.violet },
+    { label:"Completed",          val:appointments.filter(a=>a.status==="completed").length,            color:C.jade  },
+    { label:"Health Records",     val:healthUpdates.length,                                             color:C.amber },
+    { label:"Critical Vitals",    val:healthUpdates.filter(h=>h.severity==="critical").length,          color:C.rose  },
+    { label:"Total Billed",       val:`₱${totalBilled.toLocaleString()}`,                              color:C.amber },
+    { label:"Collected",          val:`₱${totalPaid.toLocaleString()}`,                                color:C.jade  },
+    { label:"Outstanding",        val:`₱${(totalBilled-totalPaid).toLocaleString()}`,                  color:C.rose  },
+    { label:"Collection Rate",    val:totalBilled>0?`${Math.round(totalPaid/totalBilled*100)}%`:"0%",  color:C.jade  },
   ];
 
   const diagCounts = patients.reduce((acc,p)=>{ acc[p.diagnosis]=(acc[p.diagnosis]||0)+1; return acc; },{});
@@ -1976,10 +1679,7 @@ function ReportsModule({ patients, appointments, billings, healthUpdates }) {
   return (
     <div className="fade-up">
       <div className="page-header">
-        <div>
-          <h2 className="page-title">Reports & Analytics</h2>
-          <p className="page-subtitle">System-wide insights and summaries</p>
-        </div>
+        <div><h2 className="page-title">Reports & Analytics</h2><p className="page-subtitle">System-wide insights and summaries</p></div>
         <button className="btn btn-ghost" onClick={()=>window.print()} style={{ gap:7, padding:"9px 14px", fontSize:13 }}>
           <Icon name="printer" size={14}/> Print
         </button>
@@ -2017,8 +1717,8 @@ function ReportsModule({ patients, appointments, billings, healthUpdates }) {
           <div className="card">
             <h3 className="section-title" style={{ marginBottom:14 }}>Patient Status</h3>
             {[["active",C.jade,"Active"],["stable",C.sky,"Stable"],["critical",C.rose,"Critical"],["discharged",C.slateL,"Discharged"]].map(([s,col,lbl])=>{
-              const cnt = patients.filter(p=>p.status===s).length;
-              const pct = patients.length>0?Math.round(cnt/patients.length*100):0;
+              const cnt=patients.filter(p=>p.status===s).length;
+              const pct=patients.length>0?Math.round(cnt/patients.length*100):0;
               return (
                 <div key={s} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 0", borderBottom:"1px solid #F8FAFC" }}>
                   <div style={{ width:9, height:9, borderRadius:"50%", background:col, boxShadow:`0 0 0 3px ${col}22`, flexShrink:0 }}/>
@@ -2057,15 +1757,15 @@ function ReportsModule({ patients, appointments, billings, healthUpdates }) {
 // ── SETTINGS MODULE ──────────────────────────────────────────
 function SettingsModule({ profile, setProfile, onLogout }) {
   const [form, setForm] = useState({ full_name:profile?.full_name||"", email:profile?.email||"", phone:profile?.phone||"", address:profile?.address||"" });
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}));
 
   async function save() {
-    setLoading(true);
+    setSaving(true);
     const ok = await sbUpdateProfile(profile?.id, { full_name:form.full_name, phone:form.phone, address:form.address });
     if (ok) { setProfile(p=>({...p, full_name:form.full_name, phone:form.phone, address:form.address})); toast("Profile updated"); }
     else toast("Failed to update","error");
-    setLoading(false);
+    setSaving(false);
   }
 
   return (
@@ -2114,8 +1814,8 @@ function SettingsModule({ profile, setProfile, onLogout }) {
             </FG>
           </div>
           <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-            <button className="btn btn-primary" onClick={save} disabled={loading}>
-              {loading?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> Save Changes</>}
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              {saving?<Spinner color="#fff"/>:<><Icon name="check" size={14}/> Save Changes</>}
             </button>
             <label style={{ cursor:"pointer" }}>
               <input type="file" accept="image/*" style={{ display:"none" }} onChange={async e=>{
@@ -2149,9 +1849,7 @@ function SettingsModule({ profile, setProfile, onLogout }) {
         <div className="card" style={{ borderLeft:`3px solid ${C.rose}` }}>
           <h3 style={{ fontFamily:"'DM Serif Display',serif", fontSize:15, marginBottom:5, color:C.rose }}>Sign Out</h3>
           <p style={{ fontSize:13, color:C.slateL, marginBottom:14 }}>This will end your current session securely.</p>
-          <button className="btn btn-danger" onClick={onLogout}>
-            <Icon name="logout" size={14}/> Sign Out
-          </button>
+          <button className="btn btn-danger" onClick={onLogout}><Icon name="logout" size={14}/> Sign Out</button>
         </div>
       </div>
     </div>
@@ -2189,14 +1887,15 @@ const NAV = [
   { id:"reports",      icon:"barchart",   label:"Reports",    section:"finance" },
   { id:"settings",     icon:"settings",   label:"Settings",   section:"account" },
 ];
-
-// Bottom nav items (5 most important)
 const BOTTOM_NAV = ["dashboard","patients","appointments","health","messages"];
 
 // ── ROOT APP ─────────────────────────────────────────────────
 export default function App() {
   const [profile,       setProfile]       = useState(null);
-  const [active,        setActive]        = useState(()=>localStorage.getItem("cnActive")||"dashboard");
+  const [authChecked,   setAuthChecked]   = useState(false);
+  const [active,        setActive]        = useState(()=>{
+    try { return localStorage.getItem("cnActive")||"dashboard"; } catch { return "dashboard"; }
+  });
   const [patients,      setPatients]      = useState([]);
   const [appointments,  setAppointments]  = useState([]);
   const [caregivers,    setCaregivers]    = useState([]);
@@ -2206,17 +1905,52 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [dataLoaded,    setDataLoaded]    = useState(false);
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
+  const loadingRef = useRef(false);
 
   // Inject CSS once
   useEffect(()=>{
-    if (!document.getElementById("cn-css2")) {
+    if (!document.getElementById("cn-css3")) {
       const s = document.createElement("style");
-      s.id="cn-css2"; s.textContent=CSS;
+      s.id="cn-css3"; s.textContent=CSS;
       document.head.appendChild(s);
     }
   },[]);
 
-  // Restore session
+  const loadAllData = useCallback(async (uid) => {
+  if (loadingRef.current) return;
+  loadingRef.current = true;
+  try {
+    // ── Wave 1: critical for initial render (max 4 concurrent) ──
+    const [p, a, cgs, n] = await Promise.all([
+      sbGetPatients(),
+      sbGetAppointments(),
+      sbGetCaregivers(),
+      sbGetNotifications(uid),
+    ]);
+    setPatients(p);
+    setAppointments(a);
+    setCaregivers(cgs);
+    setNotifications(n);
+    setDataLoaded(true); // ← skeleton disappears here, UI is usable
+
+    // ── Wave 2: secondary, loads silently in background ──
+    const [m, h, b] = await Promise.all([
+      sbGetMessages(uid),
+      sbGetHealthUpdates(),
+      sbGetBillings(),
+    ]);
+    setMessages(m);
+    setHealthUpdates(h);
+    setBillings(b);
+  } catch (e) {
+    console.error("Data load error:", e);
+    toast("Some data failed to load", "error");
+  } finally {
+    loadingRef.current = false;
+  }
+}, []);
+
+  // ── Auth — check session once, fast ─────────────────────
   useEffect(()=>{
     let mounted = true;
     (async()=>{
@@ -2224,55 +1958,99 @@ export default function App() {
         const { data } = await supabase.auth.getSession();
         if (data?.session?.user && mounted) {
           const prof = await sbGetProfile(data.session.user.id);
-          setProfile({...prof, email:data.session.user.email});
+          if (prof && mounted) {
+            const fullProfile = { ...prof, email: data.session.user.email };
+            setProfile(fullProfile);
+            // Start data load in background immediately
+            loadAllData(data.session.user.id);
+          }
         }
-      } catch(e) { console.error("auth restore",e.message||e); }
+      } catch (e) { console.error("auth restore", e.message); }
+      if (mounted) setAuthChecked(true);
     })();
-    const { data:subData } = supabase.auth.onAuthStateChange(async(event,sess)=>{
+
+    const { data: subData } = supabase.auth.onAuthStateChange(async(event, sess)=>{
       try {
-        if (event==="SIGNED_IN"&&sess?.user) {
+        if (event==="SIGNED_IN" && sess?.user) {
           const prof = await sbGetProfile(sess.user.id);
-          setProfile({...prof, email:sess.user.email});
-        } else if (event==="SIGNED_OUT") { setProfile(null); }
-      } catch(e){ console.error("auth change",e); }
+          if (prof) {
+            setProfile({ ...prof, email: sess.user.email });
+            loadAllData(sess.user.id);
+          }
+        } else if (event==="SIGNED_OUT") {
+          setProfile(null); setDataLoaded(false); loadingRef.current = false;
+          setPatients([]); setAppointments([]); setMessages([]);
+          setHealthUpdates([]); setBillings([]); setNotifications([]);
+        }
+      } catch (e) { console.error("auth change", e); }
     });
+
     return ()=>{ mounted=false; try{subData?.subscription?.unsubscribe();}catch(_){} };
-  },[]);
+  }, []);
 
-  // Load data after login
+  // ── Smart realtime — only prepend/patch, never full-refetch ──
   useEffect(()=>{
-    if (!profile||dataLoaded) return;
-    (async()=>{
-      const [p,a,m,h,b,n] = await Promise.all([
-        sbGetPatients(), sbGetAppointments(),
-        sbGetMessages(profile.id), sbGetHealthUpdates(),
-        sbGetBillings(), sbGetNotifications(profile.id),
-      ]);
-      setPatients(p); setAppointments(a); setMessages(m);
-      setHealthUpdates(h); setBillings(b); setNotifications(n);
-      const profs = await sbGetProfiles();
-      setCaregivers((profs||[]).filter(x=>x.role==="caregiver"));
-      setDataLoaded(true);
-    })();
-  },[profile]);
+    if (!profile?.id) return;
+    const uid = profile.id;
 
-  // Realtime
-  useEffect(()=>{
-    if (!profile) return;
-    const ch = supabase.channel("cn-live2")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},()=>sbGetMessages(profile.id).then(setMessages))
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"health_updates"},()=>sbGetHealthUpdates().then(setHealthUpdates))
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"},()=>sbGetNotifications(profile.id).then(setNotifications))
-      .on("postgres_changes",{event:"*",schema:"public",table:"patients"},()=>sbGetPatients().then(setPatients))
-      .on("postgres_changes",{event:"*",schema:"public",table:"appointments"},()=>sbGetAppointments().then(setAppointments))
-      .on("postgres_changes",{event:"*",schema:"public",table:"billings"},()=>sbGetBillings().then(setBillings))
+    const ch = supabase.channel("cn-live3")
+      // Messages: prepend new ones
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"}, ({new:row})=>{
+        setMessages(prev => {
+          if (prev.find(m=>m.id===row.id)) return prev;
+          return [row, ...prev];
+        });
+      })
+      // Health updates: prepend
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"health_updates"}, ({new:row})=>{
+        setHealthUpdates(prev => {
+          if (prev.find(h=>h.id===row.id)) return prev;
+          return [row, ...prev];
+        });
+      })
+      // Notifications: prepend
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"notifications"}, ({new:row})=>{
+        if (row.user_id !== uid) return;
+        setNotifications(prev => {
+          if (prev.find(n=>n.id===row.id)) return prev;
+          return [row, ...prev];
+        });
+      })
+      // Patients: upsert or remove
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"patients"}, ({new:row})=>{
+        setPatients(prev => prev.find(p=>p.id===row.id) ? prev : [row, ...prev]);
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"patients"}, ({new:row})=>{
+        setPatients(prev => prev.map(p => p.id===row.id ? {...p,...row} : p));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"patients"}, ({old:row})=>{
+        setPatients(prev => prev.filter(p => p.id!==row.id));
+      })
+      // Appointments: upsert or remove
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"appointments"}, ({new:row})=>{
+        setAppointments(prev => prev.find(a=>a.id===row.id) ? prev : [row, ...prev]);
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"appointments"}, ({new:row})=>{
+        setAppointments(prev => prev.map(a => a.id===row.id ? {...a,...row} : a));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"appointments"}, ({old:row})=>{
+        setAppointments(prev => prev.filter(a => a.id!==row.id));
+      })
+      // Billings: upsert or remove
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"billings"}, ({new:row})=>{
+        setBillings(prev => prev.find(b=>b.id===row.id) ? prev : [row, ...prev]);
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"billings"}, ({new:row})=>{
+        setBillings(prev => prev.map(b => b.id===row.id ? {...b,...row} : b));
+      })
       .subscribe();
+
     return ()=>supabase.removeChannel(ch);
-  },[profile]);
+  }, [profile?.id]);
 
   function handleLogout() {
-    supabase?.auth.signOut();
-    setProfile(null); setDataLoaded(false);
+    supabase.auth.signOut();
+    setProfile(null); setDataLoaded(false); loadingRef.current = false;
     setPatients([]); setAppointments([]); setMessages([]);
     setHealthUpdates([]); setBillings([]); setNotifications([]);
     toast("Signed out successfully");
@@ -2280,17 +2058,33 @@ export default function App() {
 
   function navigate(id) {
     setActive(id);
-    localStorage.setItem("cnActive",id);
+    try { localStorage.setItem("cnActive",id); } catch {}
     setSidebarOpen(false);
   }
 
-  if (!profile) return (<><AuthScreen onLogin={setProfile}/><ToastManager/></>);
+  // Show auth screen once we know auth state
+  if (!authChecked) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16, background:C.cream }}>
+          <div style={{ width:50, height:50, borderRadius:15, background:"linear-gradient(135deg,#CCFBF1,#A7F3D0)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Icon name="heart" size={22} color={C.jade}/>
+          </div>
+          <Spinner size={22}/>
+        </div>
+        <ToastManager/>
+      </>
+    );
+  }
+
+  if (!profile) return (<><AuthScreen onLogin={p=>{ setProfile(p); loadAllData(p.id); }}/><ToastManager/></>);
 
   const shared = {
     patients, setPatients, appointments, setAppointments,
     messages, setMessages, healthUpdates, setHealthUpdates,
-    billings, setBillings, notifications, setNotifications, profile,
-    caregivers, setCaregivers,
+    billings, setBillings, notifications, setNotifications,
+    profile, caregivers, setCaregivers,
   };
 
   const screens = {
@@ -2310,10 +2104,9 @@ export default function App() {
 
   return (
     <>
-      {/* ── Mobile header ── */}
       <header className="mobile-header">
-        <div className="mobile-header-logo">
-          <button onClick={()=>setSidebarOpen(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(148,163,184,.8)", display:"flex", padding:6, borderRadius:8, marginRight:4 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <button onClick={()=>setSidebarOpen(v=>!v)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(148,163,184,.8)", display:"flex", padding:6, borderRadius:8 }}>
             <Icon name="menu" size={20}/>
           </button>
           <div className="sidebar-logo-icon" style={{ width:30, height:30, borderRadius:8 }}>
@@ -2323,18 +2116,14 @@ export default function App() {
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           {unread>0 && (
-            <div style={{ background:C.rose, color:"#fff", borderRadius:99, fontSize:10, fontWeight:700, padding:"2px 7px", minWidth:20, textAlign:"center" }}>
-              {unread}
-            </div>
+            <div style={{ background:C.rose, color:"#fff", borderRadius:99, fontSize:10, fontWeight:700, padding:"2px 7px", minWidth:20, textAlign:"center" }}>{unread}</div>
           )}
           <Avatar name={profile?.full_name||"U"} size={30} src={profile?.avatar_url}/>
         </div>
       </header>
 
-      {/* ── Sidebar overlay (mobile) ── */}
       <div className={`sidebar-overlay ${sidebarOpen?"open":""}`} onClick={()=>setSidebarOpen(false)}/>
 
-      {/* ── Sidebar ── */}
       <nav className={`sidebar ${sidebarOpen?"open":""}`}>
         <div className="sidebar-logo">
           <div className="sidebar-logo-mark">
@@ -2353,9 +2142,7 @@ export default function App() {
                 {items
                   .filter(n=>!(profile?.role==="patient"&&n.id==="patients"))
                   .map(n=>(
-                    <div key={n.id}
-                      className={`nav-item ${active===n.id?"active":""}`}
-                      onClick={()=>navigate(n.id)}>
+                    <div key={n.id} className={`nav-item ${active===n.id?"active":""}`} onClick={()=>navigate(n.id)}>
                       <Icon name={n.icon} size={15} color={active===n.id?"#fff":"rgba(148,163,184,.7)"}/>
                       <span style={{ flex:1 }}>{n.label}</span>
                       {n.id==="messages"&&unread>0&&(
@@ -2368,7 +2155,6 @@ export default function App() {
           })}
         </div>
 
-        {/* User badge */}
         <div style={{ padding:"12px 14px", borderTop:"1px solid rgba(255,255,255,.06)", display:"flex", alignItems:"center", gap:9 }}>
           <Avatar name={profile?.full_name||"User"} size={32} src={profile?.avatar_url}/>
           <div style={{ overflow:"hidden", flex:1 }}>
@@ -2384,22 +2170,34 @@ export default function App() {
         </div>
       </nav>
 
-      {/* ── Main content ── */}
       <main className="main-area">
         {!dataLoaded ? (
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16 }}>
-            <div style={{ width:50, height:50, borderRadius:15, background:"linear-gradient(135deg,#CCFBF1,#A7F3D0)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <Icon name="heart" size={22} color={C.jade}/>
+          <div style={{ padding:"32px 36px" }}>
+            {/* Show skeleton immediately instead of blank spinner screen */}
+            <div style={{ marginBottom:28 }}>
+              <div className="skeleton" style={{ height:14, width:200, marginBottom:10 }}/>
+              <div className="skeleton" style={{ height:28, width:280, marginBottom:8 }}/>
+              <div className="skeleton" style={{ height:14, width:220 }}/>
             </div>
-            <Spinner size={22}/>
-            <p style={{ color:C.slateL, fontSize:13.5 }}>Loading CareNest…</p>
+            <div className="stats-grid" style={{ marginBottom:28 }}>
+              {[0,1,2,3].map(i=>(
+                <div key={i} className="stat-card">
+                  <div className="skeleton" style={{ width:40, height:40, borderRadius:11, marginBottom:12 }}/>
+                  <div className="skeleton" style={{ height:28, width:"60%", marginBottom:6 }}/>
+                  <div className="skeleton" style={{ height:13, width:"80%" }}/>
+                </div>
+              ))}
+            </div>
+            <div className="card">
+              <div className="skeleton" style={{ height:18, width:180, marginBottom:20 }}/>
+              <SkeletonRows rows={5}/>
+            </div>
           </div>
         ) : (
           <div className="page-wrap">{screens[active]}</div>
         )}
       </main>
 
-      {/* ── Bottom nav (mobile) ── */}
       <nav className="bottom-nav">
         {BOTTOM_NAV.map(id=>{
           const n = NAV.find(x=>x.id===id);
@@ -2415,7 +2213,6 @@ export default function App() {
             </div>
           );
         })}
-        {/* More button for billing/reports/settings */}
         <div className={`bottom-nav-item ${["billing","reports","settings"].includes(active)?"active":""}`}
           onClick={()=>setSidebarOpen(true)}>
           <Icon name="menu" size={20} color={["billing","reports","settings"].includes(active)?C.jade:"rgba(148,163,184,.55)"}/>
